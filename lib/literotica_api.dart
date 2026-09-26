@@ -138,8 +138,19 @@ class StoryDocument {
   final List<String> pages;
 }
 
+class StoryFeedPage {
+  const StoryFeedPage({required this.items, required this.hasMore});
+
+  final List<ListorItem> items;
+  final bool hasMore;
+}
+
 abstract interface class StoryRepository {
-  Future<List<ListorItem>> fetchFeed(StoryFilters filters, FeedType feed);
+  Future<StoryFeedPage> fetchFeed(
+    StoryFilters filters,
+    FeedType feed, {
+    int page = 0,
+  });
 
   Future<List<StoryTag>> fetchTags(ListorCategory category, StoryPeriod period);
 
@@ -154,6 +165,7 @@ class LiteroticaApiClient implements StoryRepository {
 
   final http.Client _client;
   final Random _random;
+  final Map<String, int> _randomStartPages = {};
 
   @override
   Future<StoryDocument> fetchStory(ListorItem story) async {
@@ -173,20 +185,26 @@ class LiteroticaApiClient implements StoryRepository {
   }
 
   @override
-  Future<List<ListorItem>> fetchFeed(
+  Future<StoryFeedPage> fetchFeed(
     StoryFilters filters,
-    FeedType feed,
-  ) async {
+    FeedType feed, {
+    int page = 0,
+  }) async {
     if (filters.tags.isNotEmpty) {
       final first = await _searchByTags(filters: filters, page: 1);
-      final page = switch (feed) {
-        FeedType.random when first.lastPage > 1 => await _searchByTags(
-          filters: filters,
-          page: 1 + _random.nextInt(first.lastPage),
-        ),
-        _ => first,
-      };
-      return _sortItems(page.items, feed);
+      final targetPage = feed == FeedType.random
+          ? _randomPage(filters, first.lastPage, page)
+          : page + 1;
+      if (targetPage > first.lastPage) {
+        return const StoryFeedPage(items: [], hasMore: false);
+      }
+      final result = targetPage == 1
+          ? first
+          : await _searchByTags(filters: filters, page: targetPage);
+      return StoryFeedPage(
+        items: _sortItems(result.items, feed),
+        hasMore: page + 1 < first.lastPage,
+      );
     }
 
     final first = await _search(
@@ -194,26 +212,38 @@ class LiteroticaApiClient implements StoryRepository {
       page: 1,
       popular: feed == FeedType.popular,
     );
-    late final _SearchPage page;
-    switch (feed) {
-      case FeedType.newest:
-        page = first.lastPage == 1
-            ? first
-            : await _search(category: filters.category, page: first.lastPage);
-      case FeedType.popular:
-        page = first;
-      case FeedType.random:
-        final number = filters.period == StoryPeriod.all
-            ? 1 + _random.nextInt(first.lastPage)
-            : first.lastPage;
-        page = number == 1
-            ? first
-            : await _search(category: filters.category, page: number);
+    final targetPage = switch (feed) {
+      FeedType.newest => first.lastPage - page,
+      FeedType.popular => page + 1,
+      FeedType.random => _randomPage(filters, first.lastPage, page),
+    };
+    if (targetPage < 1 || targetPage > first.lastPage) {
+      return const StoryFeedPage(items: [], hasMore: false);
     }
-    final items = page.items
+    final result = targetPage == 1
+        ? first
+        : await _search(
+            category: filters.category,
+            page: targetPage,
+            popular: feed == FeedType.popular,
+          );
+    final items = result.items
         .where((item) => _isInPeriod(item.approvedAt, filters.period))
         .toList();
-    return _sortItems(items, feed);
+    return StoryFeedPage(
+      items: _sortItems(items, feed),
+      hasMore: page + 1 < first.lastPage,
+    );
+  }
+
+  int _randomPage(StoryFilters filters, int pageCount, int offset) {
+    final tagIds = filters.tags.map((tag) => tag.id).toList()..sort();
+    final key = '${filters.category.id}:${filters.period.name}:$tagIds';
+    final start = _randomStartPages.putIfAbsent(
+      key,
+      () => _random.nextInt(pageCount),
+    );
+    return ((start + offset) % pageCount) + 1;
   }
 
   @override

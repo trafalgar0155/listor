@@ -20,13 +20,11 @@ class _ListorHomePageState extends State<ListorHomePage> {
 
   late final StoryRepository _repository;
   StoryFilters _filters = const StoryFilters();
-  late Map<FeedType, Future<List<ListorItem>>> _feeds;
 
   @override
   void initState() {
     super.initState();
     _repository = widget.repository ?? LiteroticaApiClient();
-    _reloadFeeds();
     unawaited(_restoreCategory());
   }
 
@@ -38,7 +36,6 @@ class _ListorHomePageState extends State<ListorHomePage> {
       if (category.name == saved && category != _filters.category) {
         setState(() {
           _filters = StoryFilters(category: category);
-          _reloadFeeds();
         });
         return;
       }
@@ -46,10 +43,7 @@ class _ListorHomePageState extends State<ListorHomePage> {
   }
 
   void _applyFilters(StoryFilters filters) {
-    setState(() {
-      _filters = filters;
-      _reloadFeeds();
-    });
+    setState(() => _filters = filters);
     unawaited(_saveCategory(filters.category));
   }
 
@@ -63,17 +57,6 @@ class _ListorHomePageState extends State<ListorHomePage> {
           _FilterSheet(initialValue: _filters, repository: _repository),
     );
     if (filters != null && mounted) _applyFilters(filters);
-  }
-
-  void _reloadFeeds() {
-    _feeds = {
-      for (final feed in FeedType.values)
-        feed: _repository.fetchFeed(_filters, feed),
-    };
-  }
-
-  void _retry(FeedType feed) {
-    setState(() => _feeds[feed] = _repository.fetchFeed(_filters, feed));
   }
 
   Future<void> _saveCategory(ListorCategory category) async {
@@ -105,10 +88,10 @@ class _ListorHomePageState extends State<ListorHomePage> {
           children: [
             for (final feed in FeedType.values)
               _FeedPage(
-                key: PageStorageKey(feed.name),
-                future: _feeds[feed]!,
+                key: ValueKey('${feed.name}:${_filterFingerprint(_filters)}'),
+                feed: feed,
+                filters: _filters,
                 repository: _repository,
-                onRetry: () => _retry(feed),
               ),
           ],
         ),
@@ -121,6 +104,11 @@ class _ListorHomePageState extends State<ListorHomePage> {
       ),
     );
   }
+}
+
+String _filterFingerprint(StoryFilters filters) {
+  final tagIds = filters.tags.map((tag) => tag.id).toList()..sort();
+  return '${filters.category.name}:${filters.period.name}:$tagIds';
 }
 
 class _FilterSheet extends StatefulWidget {
@@ -381,37 +369,160 @@ class _FeedTabs extends StatelessWidget {
   }
 }
 
-class _FeedPage extends StatelessWidget {
+class _FeedPage extends StatefulWidget {
   const _FeedPage({
     super.key,
-    required this.future,
+    required this.feed,
+    required this.filters,
     required this.repository,
+  });
+
+  final FeedType feed;
+  final StoryFilters filters;
+  final StoryRepository repository;
+
+  @override
+  State<_FeedPage> createState() => _FeedPageState();
+}
+
+class _FeedPageState extends State<_FeedPage> {
+  final ScrollController _scrollController = ScrollController();
+  final List<ListorItem> _items = [];
+  final Set<int> _storyIds = {};
+
+  int _nextPage = 0;
+  int _generation = 0;
+  bool _hasMore = true;
+  bool _isLoading = false;
+  Object? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController.addListener(_maybeLoadMore);
+    unawaited(_loadMore());
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _maybeLoadMore() {
+    if (!_scrollController.hasClients) return;
+    if (_scrollController.position.extentAfter < 320) {
+      unawaited(_loadMore());
+    }
+  }
+
+  Future<void> _loadMore() async {
+    if (_isLoading || !_hasMore) return;
+    final generation = _generation;
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+
+    try {
+      StoryFeedPage result;
+      do {
+        result = await widget.repository.fetchFeed(
+          widget.filters,
+          widget.feed,
+          page: _nextPage,
+        );
+        if (!mounted || generation != _generation) return;
+        _nextPage++;
+        for (final item in result.items) {
+          if (_storyIds.add(item.id)) _items.add(item);
+        }
+        _hasMore = result.hasMore;
+      } while (result.items.isEmpty && _hasMore);
+    } catch (error) {
+      if (!mounted || generation != _generation) return;
+      _error = error;
+    } finally {
+      if (mounted && generation == _generation) {
+        setState(() => _isLoading = false);
+        WidgetsBinding.instance.addPostFrameCallback((_) => _maybeLoadMore());
+      }
+    }
+  }
+
+  void _retry() {
+    if (_items.isEmpty) {
+      _generation++;
+      _nextPage = 0;
+      _hasMore = true;
+      _storyIds.clear();
+    }
+    setState(() => _error = null);
+    unawaited(_loadMore());
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_items.isEmpty && _isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (_items.isEmpty && _error != null) {
+      return _ErrorState(onRetry: _retry);
+    }
+    if (_items.isEmpty && !_hasMore) return const _EmptyState();
+
+    final showFooter = _isLoading || _error != null || _hasMore;
+    return ListView.separated(
+      key: Key('feed-list-${widget.feed.name}'),
+      controller: _scrollController,
+      padding: const EdgeInsets.fromLTRB(10, 10, 10, 96),
+      itemCount: _items.length + (showFooter ? 1 : 0),
+      separatorBuilder: (_, _) => const SizedBox(height: 6),
+      itemBuilder: (context, index) {
+        if (index == _items.length) {
+          return _FeedFooter(
+            isLoading: _isLoading,
+            hasError: _error != null,
+            onRetry: _retry,
+          );
+        }
+        return _StoryCard(item: _items[index], repository: widget.repository);
+      },
+    );
+  }
+}
+
+class _FeedFooter extends StatelessWidget {
+  const _FeedFooter({
+    required this.isLoading,
+    required this.hasError,
     required this.onRetry,
   });
 
-  final Future<List<ListorItem>> future;
-  final StoryRepository repository;
+  final bool isLoading;
+  final bool hasError;
   final VoidCallback onRetry;
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<List<ListorItem>>(
-      future: future,
-      builder: (context, snapshot) {
-        if (snapshot.hasError) return _ErrorState(onRetry: onRetry);
-        if (!snapshot.hasData) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        final items = snapshot.data!;
-        if (items.isEmpty) return const _EmptyState();
-        return ListView.separated(
-          padding: const EdgeInsets.fromLTRB(10, 10, 10, 20),
-          itemCount: items.length,
-          separatorBuilder: (_, _) => const SizedBox(height: 6),
-          itemBuilder: (context, index) =>
-              _StoryCard(item: items[index], repository: repository),
-        );
-      },
+    return SizedBox(
+      height: 70,
+      child: Center(
+        child: hasError
+            ? TextButton.icon(
+                key: const Key('retry-more-stories'),
+                onPressed: onRetry,
+                icon: const Icon(Icons.refresh_rounded),
+                label: const Text('Retry loading more'),
+              )
+            : isLoading
+            ? const SizedBox.square(
+                key: Key('loading-more-stories'),
+                dimension: 24,
+                child: CircularProgressIndicator(strokeWidth: 2.5),
+              )
+            : const SizedBox.shrink(),
+      ),
     );
   }
 }

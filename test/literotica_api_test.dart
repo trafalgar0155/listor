@@ -26,8 +26,9 @@ void main() {
       expect(params['categories'], [35]);
       expect(params['popular'], isTrue);
       expect(params['languages'], [1]);
-      expect(stories.single.title, 'Non Erotic Sample');
-      expect(stories.single.category, ListorCategory.nonErotic);
+      expect(stories.items.single.title, 'Non Erotic Sample');
+      expect(stories.items.single.category, ListorCategory.nonErotic);
+      expect(stories.hasMore, isFalse);
     },
   );
 
@@ -55,7 +56,32 @@ void main() {
       client: client,
     ).fetchFeed(const StoryFilters(), FeedType.newest);
     expect(pages, [1, 2]);
-    expect(stories.map((story) => story.title), ['Newest', 'Older']);
+    expect(stories.items.map((story) => story.title), ['Newest', 'Older']);
+    expect(stories.hasMore, isTrue);
+  });
+
+  test('requests the next API page for a subsequent feed batch', () async {
+    final pages = <int>[];
+    final client = MockClient((request) async {
+      final params = jsonDecode(request.url.queryParameters['params']!);
+      final page = params['page'] as int;
+      pages.add(page);
+      return http.Response(
+        _response(
+          total: 101,
+          stories: [_story(id: page, title: 'Page $page')],
+        ),
+        200,
+      );
+    });
+
+    final batch = await LiteroticaApiClient(
+      client: client,
+    ).fetchFeed(const StoryFilters(), FeedType.popular, page: 1);
+
+    expect(pages, [1, 2]);
+    expect(batch.items.single.title, 'Page 2');
+    expect(batch.hasMore, isTrue);
   });
 
   test('throws a readable error for a failed response', () async {
@@ -130,7 +156,7 @@ void main() {
     expect(requestedUri.path, '/api/3/tagsportal/stories');
     expect(params['tags'], containsAll([1189, 547]));
     expect(params['period'], 'week');
-    expect(stories.single.category, ListorCategory.nonErotic);
+    expect(stories.items.single.category, ListorCategory.nonErotic);
   });
 
   test('loads every story page without flattening its HTML', () async {
