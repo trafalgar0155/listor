@@ -1,17 +1,28 @@
-# listor
+# Listor
 
-A new Flutter project.
+A focused phone reading-list interface built with Flutter and Material 3.
 
-## Getting Started
+## Current UI
 
-This project is a starting point for a Flutter application.
+- Floating filter action with a category, time range, and multi-select tags
+- Swipeable New, Popular, and Random feeds
+- Live story metadata from the HTTP API wrapped by `LiteroticaApi 2.1.0`
+- Compact, high-density story list
+- In-app multi-page story reader with the source HTML formatting preserved
+- Dark black-and-blue visual theme
 
-A few resources to get you started if this is your first Flutter project:
+The NuGet assembly cannot run inside Flutter, so Listor implements its public
+`https://literotica.com/api/3` request contract in Dart. The initial category is
+**Non Erotic** (API category `35`). Available tags refresh for the selected
+category and period and are displayed alphabetically. New selects the newest
+category page, Popular uses the API's `popular` filter, and Random samples a
+category page.
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+## Run locally
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+```sh
+flutter pub get
+flutter run
+```
+
+Run checks with `flutter analyze` and `flutter test`.
