@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+  <title id="title">Listor logo</title>
+  <desc id="desc">A blue forward slash beside a geometric navy letter L.</desc>
+  <path d="M300 742 L430 276" fill="none" stroke="#2693FF" stroke-width="72" stroke-linecap="round"/>
+  <path d="M575 276 L445 710 L782 710" fill="none" stroke="#07111F" stroke-width="82" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

@@ -39,3 +39,12 @@ it:
 - `ANDROID_KEY_PASSWORD`
 
 The APK is available from the completed workflow run as a 30-day artifact.
+
+## Brand assets
+
+The reusable `/L` light-surface logo, dark-surface logo, and app-icon artwork
+lives in `assets/branding`. Android
+uses separate adaptive foreground, background, and monochrome layers so the
+launcher can apply Material You themed-icon colors on supported devices.
+Run `tool/generate_icons.py` with the bundled Pillow dependency to regenerate
+the Android legacy and iOS raster icon sizes.
