@@ -1,20 +1,30 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_html/flutter_html.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:listor/literotica_api.dart';
+import 'package:listor/local_story_store.dart';
 import 'package:listor/main.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   late _FakeStoryRepository repository;
+  late _FakeSavedStoriesRepository savedStoriesRepository;
 
   setUp(() {
     SharedPreferences.setMockInitialValues({});
     repository = _FakeStoryRepository();
+    savedStoriesRepository = _FakeSavedStoriesRepository();
   });
 
+  ListorApp buildApp() => ListorApp(
+    repository: repository,
+    savedStoriesRepository: savedStoriesRepository,
+  );
+
   testWidgets('shows a filter action and all feed tabs', (tester) async {
-    await tester.pumpWidget(ListorApp(repository: repository));
+    await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
     expect(find.text('Listor'), findsOneWidget);
     expect(find.byKey(const Key('category-filter')), findsNothing);
@@ -22,12 +32,14 @@ void main() {
     expect(find.text('New'), findsOneWidget);
     expect(find.text('Popular'), findsOneWidget);
     expect(find.text('Random'), findsOneWidget);
+    expect(find.byKey(const Key('explore-destination')), findsOneWidget);
+    expect(find.byKey(const Key('saved-destination')), findsOneWidget);
   });
 
   testWidgets('applies category, period, and multi-select tag filters', (
     tester,
   ) async {
-    await tester.pumpWidget(ListorApp(repository: repository));
+    await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
     expect(find.text('A Quiet Harbour'), findsOneWidget);
     expect(
@@ -68,7 +80,7 @@ void main() {
 
   testWidgets('restores the last selected Literotica category', (tester) async {
     SharedPreferences.setMockInitialValues({'selected_category': 'romance'});
-    await tester.pumpWidget(ListorApp(repository: repository));
+    await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
     expect(find.text('Paper Moons'), findsOneWidget);
     await tester.tap(find.byKey(const Key('filter-fab')));
@@ -79,7 +91,7 @@ void main() {
   testWidgets('feed tabs can be changed with a horizontal swipe', (
     tester,
   ) async {
-    await tester.pumpWidget(ListorApp(repository: repository));
+    await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
     await tester.fling(find.byType(TabBarView), const Offset(-500, 0), 1000);
     await tester.pumpAndSettle();
@@ -96,7 +108,7 @@ void main() {
   testWidgets('loads and appends another story page near the bottom', (
     tester,
   ) async {
-    await tester.pumpWidget(ListorApp(repository: repository));
+    await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
 
     expect(
@@ -107,11 +119,12 @@ void main() {
     );
 
     final listFinder = find.byKey(const Key('feed-list-newest'));
-    final initialExtent = tester
-        .widget<ListView>(listFinder)
-        .controller!
-        .position
-        .maxScrollExtent;
+    final scrollableFinder = find.descendant(
+      of: listFinder,
+      matching: find.byType(Scrollable),
+    );
+    final position = tester.state<ScrollableState>(scrollableFinder).position;
+    final initialExtent = position.maxScrollExtent;
     await tester.fling(listFinder, const Offset(0, -1000), 1400);
     await tester.pumpAndSettle();
 
@@ -121,18 +134,32 @@ void main() {
       ),
       isTrue,
     );
-    final appendedExtent = tester
-        .widget<ListView>(listFinder)
-        .controller!
-        .position
-        .maxScrollExtent;
+    final appendedExtent = position.maxScrollExtent;
     expect(appendedExtent, greaterThan(initialExtent));
+  });
+
+  testWidgets('hides navigation chrome while scrolling down', (tester) async {
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+
+    final listFinder = find.byKey(const Key('feed-list-newest'));
+    final navigation = find.byKey(const Key('bottom-navigation-shell'));
+    expect(tester.getSize(navigation).height, greaterThan(0));
+
+    await tester.fling(listFinder, const Offset(0, -700), 1200);
+    await tester.pumpAndSettle();
+    expect(tester.getSize(navigation).height, 0);
+    expect(find.text('New'), findsOneWidget);
+
+    await tester.fling(listFinder, const Offset(0, 350), 900);
+    await tester.pumpAndSettle();
+    expect(tester.getSize(navigation).height, greaterThan(0));
   });
 
   testWidgets('opens a formatted story reader when a card is tapped', (
     tester,
   ) async {
-    await tester.pumpWidget(ListorApp(repository: repository));
+    await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('A Quiet Harbour'));
@@ -152,9 +179,58 @@ void main() {
     });
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(390, 844);
-    await tester.pumpWidget(ListorApp(repository: repository));
+    await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('queues a download and moves it to Saved when complete', (
+    tester,
+  ) async {
+    final storyDownload = Completer<StoryDocument>();
+    repository.storyResponse = storyDownload;
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('save-story-35000')));
+    await tester.pump();
+    expect(savedStoriesRepository.stories, isEmpty);
+    expect(savedStoriesRepository.downloads, hasLength(1));
+    expect(find.byTooltip('Downloading story'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('saved-destination')));
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text('Saved'), findsWidgets);
+    expect(find.text('No saved stories yet'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('downloads-action')));
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.text('Downloads'), findsOneWidget);
+    expect(find.byKey(const Key('downloads-list')), findsOneWidget);
+    expect(find.text('A Quiet Harbour'), findsOneWidget);
+    expect(find.text('Downloading for offline use…'), findsOneWidget);
+
+    storyDownload.complete(
+      const StoryDocument(
+        pages: [
+          '<p><strong>Opening line</strong></p>\n\n'
+              'Second paragraph with <em>emphasis</em>.',
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('No active downloads'), findsOneWidget);
+
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('saved-stories-list')), findsOneWidget);
+    expect(find.text('A Quiet Harbour'), findsOneWidget);
+
+    await tester.tap(find.text('A Quiet Harbour'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('story-reader')), findsOneWidget);
+    expect(repository.storyFetchCount, 1);
   });
 }
 
@@ -167,6 +243,8 @@ class _Request {
 
 class _FakeStoryRepository implements StoryRepository {
   final requests = <_Request>[];
+  int storyFetchCount = 0;
+  Completer<StoryDocument>? storyResponse;
 
   @override
   Future<StoryFeedPage> fetchFeed(
@@ -217,11 +295,73 @@ class _FakeStoryRepository implements StoryRepository {
 
   @override
   Future<StoryDocument> fetchStory(ListorItem story) async {
+    storyFetchCount++;
+    final response = storyResponse;
+    if (response != null) return response.future;
     return const StoryDocument(
       pages: [
         '<p><strong>Opening line</strong></p>\n\n'
             'Second paragraph with <em>emphasis</em>.',
       ],
     );
+  }
+}
+
+class _FakeSavedStoriesRepository implements SavedStoriesRepository {
+  final stories = <ListorItem>[];
+  final documents = <int, StoryDocument>{};
+  final downloads = <StoryDownload>[];
+
+  @override
+  Future<bool> contains(int storyId) async {
+    return stories.any((story) => story.id == storyId);
+  }
+
+  @override
+  Future<List<ListorItem>> readAll() async => List.of(stories);
+
+  @override
+  Future<List<StoryDownload>> readDownloads() async => List.of(downloads);
+
+  @override
+  Future<StoryDocument?> readDocument(int storyId) async => documents[storyId];
+
+  @override
+  Future<void> remove(int storyId) async {
+    stories.removeWhere((story) => story.id == storyId);
+    documents.remove(storyId);
+  }
+
+  @override
+  Future<void> enqueueDownload(ListorItem story) async {
+    if (downloads.any((download) => download.story.id == story.id)) return;
+    downloads.add(
+      StoryDownload(story: story, status: StoryDownloadStatus.queued),
+    );
+  }
+
+  @override
+  Future<void> removeDownload(int storyId) async {
+    downloads.removeWhere((download) => download.story.id == storyId);
+  }
+
+  @override
+  Future<void> save(ListorItem story, StoryDocument document) async {
+    stories.removeWhere((existing) => existing.id == story.id);
+    stories.insert(0, story);
+    documents[story.id] = document;
+  }
+
+  @override
+  Future<void> updateDownload(
+    int storyId,
+    StoryDownloadStatus status, {
+    String? error,
+  }) async {
+    final index = downloads.indexWhere(
+      (download) => download.story.id == storyId,
+    );
+    if (index < 0) return;
+    downloads[index] = downloads[index].copyWith(status: status, error: error);
   }
 }

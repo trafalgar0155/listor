@@ -4,12 +4,18 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'literotica_api.dart';
+import 'local_story_store.dart';
 import 'story_reader.dart';
 
 class ListorHomePage extends StatefulWidget {
-  const ListorHomePage({super.key, this.repository});
+  const ListorHomePage({
+    super.key,
+    this.repository,
+    this.savedStoriesRepository,
+  });
 
   final StoryRepository? repository;
+  final SavedStoriesRepository? savedStoriesRepository;
 
   @override
   State<ListorHomePage> createState() => _ListorHomePageState();
@@ -19,13 +25,30 @@ class _ListorHomePageState extends State<ListorHomePage> {
   static const _categoryPreferenceKey = 'selected_category';
 
   late final StoryRepository _repository;
+  late final SavedStoriesViewModel _savedStories;
   StoryFilters _filters = const StoryFilters();
+  int _destinationIndex = 0;
+  bool _showNavigation = true;
 
   @override
   void initState() {
     super.initState();
-    _repository = widget.repository ?? LiteroticaApiClient();
+    final remoteRepository = widget.repository ?? LiteroticaApiClient();
+    final localRepository =
+        widget.savedStoriesRepository ?? SqliteSavedStoriesRepository();
+    _repository = OfflineFirstStoryRepository(
+      remoteRepository,
+      localRepository,
+    );
+    _savedStories = SavedStoriesViewModel(localRepository, _repository);
+    unawaited(_savedStories.load());
     unawaited(_restoreCategory());
+  }
+
+  @override
+  void dispose() {
+    _savedStories.dispose();
+    super.dispose();
   }
 
   Future<void> _restoreCategory() async {
@@ -64,42 +87,93 @@ class _ListorHomePageState extends State<ListorHomePage> {
     await preferences.setString(_categoryPreferenceKey, category.name);
   }
 
+  bool _handleScroll(ScrollNotification notification) {
+    if (notification.metrics.axis != Axis.vertical) return false;
+    final delta = notification is ScrollUpdateNotification
+        ? notification.scrollDelta
+        : null;
+    if (notification.metrics.pixels > 0 && delta == null) return false;
+    final shouldShow = notification.metrics.pixels <= 0 || delta! < 0;
+    if (shouldShow != _showNavigation) {
+      setState(() => _showNavigation = shouldShow);
+    }
+    return false;
+  }
+
   @override
   Widget build(BuildContext context) {
+    final isExploring = _destinationIndex == 0;
+    final navigationHeight = 60 + MediaQuery.paddingOf(context).bottom;
     return DefaultTabController(
       length: FeedType.values.length,
       child: Scaffold(
-        appBar: AppBar(
-          toolbarHeight: 64,
-          titleSpacing: 16,
-          title: Text(
-            'Listor',
-            style: Theme.of(context).textTheme.titleLarge?.copyWith(
-              fontWeight: FontWeight.w800,
-              letterSpacing: -0.6,
-            ),
-          ),
-          bottom: const PreferredSize(
-            preferredSize: Size.fromHeight(55),
-            child: _FeedTabs(),
-          ),
-        ),
-        body: TabBarView(
+        body: IndexedStack(
+          index: _destinationIndex,
           children: [
-            for (final feed in FeedType.values)
-              _FeedPage(
-                key: ValueKey('${feed.name}:${_filterFingerprint(_filters)}'),
-                feed: feed,
-                filters: _filters,
-                repository: _repository,
-              ),
+            _ExploreView(
+              filters: _filters,
+              repository: _repository,
+              savedStories: _savedStories,
+              onScroll: _handleScroll,
+            ),
+            _SavedDestination(
+              repository: _repository,
+              savedStories: _savedStories,
+              onScroll: _handleScroll,
+            ),
           ],
         ),
-        floatingActionButton: FloatingActionButton.extended(
-          key: const Key('filter-fab'),
-          onPressed: _showFilters,
-          icon: const Icon(Icons.tune_rounded),
-          label: const Text('Filter'),
+        floatingActionButton: isExploring
+            ? AnimatedSlide(
+                duration: const Duration(milliseconds: 220),
+                curve: Curves.easeOutCubic,
+                offset: _showNavigation ? Offset.zero : const Offset(0, 2),
+                child: AnimatedOpacity(
+                  duration: const Duration(milliseconds: 160),
+                  opacity: _showNavigation ? 1 : 0,
+                  child: FloatingActionButton.extended(
+                    key: const Key('filter-fab'),
+                    onPressed: _showNavigation ? _showFilters : null,
+                    icon: const Icon(Icons.tune_rounded),
+                    label: const Text('Filter'),
+                  ),
+                ),
+              )
+            : null,
+        bottomNavigationBar: AnimatedContainer(
+          key: const Key('bottom-navigation-shell'),
+          duration: const Duration(milliseconds: 240),
+          curve: Curves.easeOutCubic,
+          height: _showNavigation ? navigationHeight : 0,
+          clipBehavior: Clip.hardEdge,
+          decoration: const BoxDecoration(),
+          child: SafeArea(
+            top: false,
+            child: NavigationBar(
+              height: 60,
+              selectedIndex: _destinationIndex,
+              onDestinationSelected: (index) {
+                setState(() {
+                  _destinationIndex = index;
+                  _showNavigation = true;
+                });
+              },
+              destinations: const [
+                NavigationDestination(
+                  key: Key('explore-destination'),
+                  icon: Icon(Icons.explore_outlined),
+                  selectedIcon: Icon(Icons.explore_rounded),
+                  label: 'Explore',
+                ),
+                NavigationDestination(
+                  key: Key('saved-destination'),
+                  icon: Icon(Icons.bookmarks_outlined),
+                  selectedIcon: Icon(Icons.bookmarks_rounded),
+                  label: 'Saved',
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -109,6 +183,126 @@ class _ListorHomePageState extends State<ListorHomePage> {
 String _filterFingerprint(StoryFilters filters) {
   final tagIds = filters.tags.map((tag) => tag.id).toList()..sort();
   return '${filters.category.name}:${filters.period.name}:$tagIds';
+}
+
+class _ExploreView extends StatelessWidget {
+  const _ExploreView({
+    required this.filters,
+    required this.repository,
+    required this.savedStories,
+    required this.onScroll,
+  });
+
+  final StoryFilters filters;
+  final StoryRepository repository;
+  final SavedStoriesViewModel savedStories;
+  final NotificationListenerCallback<ScrollNotification> onScroll;
+
+  @override
+  Widget build(BuildContext context) {
+    return NotificationListener<ScrollNotification>(
+      onNotification: onScroll,
+      child: NestedScrollView(
+        floatHeaderSlivers: true,
+        headerSliverBuilder: (context, innerBoxIsScrolled) => [
+          SliverAppBar(
+            floating: true,
+            snap: true,
+            pinned: true,
+            toolbarHeight: 48,
+            titleSpacing: 16,
+            title: Text(
+              'Listor',
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.w800,
+                letterSpacing: -0.6,
+              ),
+            ),
+            bottom: const PreferredSize(
+              preferredSize: Size.fromHeight(44),
+              child: SizedBox(height: 44, child: _FeedTabs()),
+            ),
+          ),
+        ],
+        body: TabBarView(
+          children: [
+            for (final feed in FeedType.values)
+              _FeedPage(
+                key: ValueKey('${feed.name}:${_filterFingerprint(filters)}'),
+                feed: feed,
+                filters: filters,
+                repository: repository,
+                savedStories: savedStories,
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SavedDestination extends StatelessWidget {
+  const _SavedDestination({
+    required this.repository,
+    required this.savedStories,
+    required this.onScroll,
+  });
+
+  final StoryRepository repository;
+  final SavedStoriesViewModel savedStories;
+  final NotificationListenerCallback<ScrollNotification> onScroll;
+
+  @override
+  Widget build(BuildContext context) {
+    return NotificationListener<ScrollNotification>(
+      onNotification: onScroll,
+      child: NestedScrollView(
+        floatHeaderSlivers: true,
+        headerSliverBuilder: (context, innerBoxIsScrolled) => [
+          SliverAppBar(
+            floating: true,
+            snap: true,
+            toolbarHeight: 48,
+            titleSpacing: 16,
+            title: Text(
+              'Saved',
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.w800,
+                letterSpacing: -0.6,
+              ),
+            ),
+            actions: [
+              ListenableBuilder(
+                listenable: savedStories,
+                builder: (context, _) => Badge.count(
+                  count: savedStories.downloads.length,
+                  isLabelVisible: savedStories.downloads.isNotEmpty,
+                  child: IconButton(
+                    key: const Key('downloads-action'),
+                    tooltip: 'Downloads',
+                    onPressed: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) =>
+                              _DownloadsPage(savedStories: savedStories),
+                        ),
+                      );
+                    },
+                    icon: const Icon(Icons.download_rounded),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 4),
+            ],
+          ),
+        ],
+        body: _SavedStoriesView(
+          repository: repository,
+          savedStories: savedStories,
+        ),
+      ),
+    );
+  }
 }
 
 class _FilterSheet extends StatefulWidget {
@@ -375,20 +569,22 @@ class _FeedPage extends StatefulWidget {
     required this.feed,
     required this.filters,
     required this.repository,
+    required this.savedStories,
   });
 
   final FeedType feed;
   final StoryFilters filters;
   final StoryRepository repository;
+  final SavedStoriesViewModel savedStories;
 
   @override
   State<_FeedPage> createState() => _FeedPageState();
 }
 
 class _FeedPageState extends State<_FeedPage> {
-  final ScrollController _scrollController = ScrollController();
   final List<ListorItem> _items = [];
   final Set<int> _storyIds = {};
+  ScrollMetrics? _lastMetrics;
 
   int _nextPage = 0;
   int _generation = 0;
@@ -399,19 +595,12 @@ class _FeedPageState extends State<_FeedPage> {
   @override
   void initState() {
     super.initState();
-    _scrollController.addListener(_maybeLoadMore);
     unawaited(_loadMore());
   }
 
-  @override
-  void dispose() {
-    _scrollController.dispose();
-    super.dispose();
-  }
-
-  void _maybeLoadMore() {
-    if (!_scrollController.hasClients) return;
-    if (_scrollController.position.extentAfter < 320) {
+  void _maybeLoadMore(ScrollMetrics metrics) {
+    _lastMetrics = metrics;
+    if (metrics.extentAfter < 320) {
       unawaited(_loadMore());
     }
   }
@@ -445,7 +634,10 @@ class _FeedPageState extends State<_FeedPage> {
     } finally {
       if (mounted && generation == _generation) {
         setState(() => _isLoading = false);
-        WidgetsBinding.instance.addPostFrameCallback((_) => _maybeLoadMore());
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          final metrics = _lastMetrics;
+          if (metrics != null) _maybeLoadMore(metrics);
+        });
       }
     }
   }
@@ -472,22 +664,37 @@ class _FeedPageState extends State<_FeedPage> {
     if (_items.isEmpty && !_hasMore) return const _EmptyState();
 
     final showFooter = _isLoading || _error != null || _hasMore;
-    return ListView.separated(
-      key: Key('feed-list-${widget.feed.name}'),
-      controller: _scrollController,
-      padding: const EdgeInsets.fromLTRB(10, 10, 10, 96),
-      itemCount: _items.length + (showFooter ? 1 : 0),
-      separatorBuilder: (_, _) => const SizedBox(height: 6),
-      itemBuilder: (context, index) {
-        if (index == _items.length) {
-          return _FeedFooter(
-            isLoading: _isLoading,
-            hasError: _error != null,
-            onRetry: _retry,
-          );
-        }
-        return _StoryCard(item: _items[index], repository: widget.repository);
+    return NotificationListener<ScrollMetricsNotification>(
+      onNotification: (notification) {
+        _maybeLoadMore(notification.metrics);
+        return false;
       },
+      child: NotificationListener<ScrollNotification>(
+        onNotification: (notification) {
+          _maybeLoadMore(notification.metrics);
+          return false;
+        },
+        child: ListView.separated(
+          key: Key('feed-list-${widget.feed.name}'),
+          padding: const EdgeInsets.fromLTRB(10, 10, 10, 96),
+          itemCount: _items.length + (showFooter ? 1 : 0),
+          separatorBuilder: (_, _) => const SizedBox(height: 6),
+          itemBuilder: (context, index) {
+            if (index == _items.length) {
+              return _FeedFooter(
+                isLoading: _isLoading,
+                hasError: _error != null,
+                onRetry: _retry,
+              );
+            }
+            return _StoryCard(
+              item: _items[index],
+              repository: widget.repository,
+              savedStories: widget.savedStories,
+            );
+          },
+        ),
+      ),
     );
   }
 }
@@ -528,10 +735,15 @@ class _FeedFooter extends StatelessWidget {
 }
 
 class _StoryCard extends StatelessWidget {
-  const _StoryCard({required this.item, required this.repository});
+  const _StoryCard({
+    required this.item,
+    required this.repository,
+    required this.savedStories,
+  });
 
   final ListorItem item;
   final StoryRepository repository;
+  final SavedStoriesViewModel savedStories;
 
   @override
   Widget build(BuildContext context) {
@@ -567,15 +779,55 @@ class _StoryCard extends StatelessWidget {
                       ),
                     ),
                   ),
-                  IconButton(
-                    onPressed: () {},
-                    tooltip: 'Save',
-                    visualDensity: VisualDensity.compact,
-                    constraints: const BoxConstraints.tightFor(
-                      width: 32,
-                      height: 28,
-                    ),
-                    icon: const Icon(Icons.bookmark_border_rounded, size: 18),
+                  ListenableBuilder(
+                    listenable: savedStories,
+                    builder: (context, _) {
+                      final isSaved = savedStories.isSaved(item.id);
+                      final download = savedStories.downloadFor(item.id);
+                      final isDownloading =
+                          download?.status == StoryDownloadStatus.downloading;
+                      final isQueued =
+                          download?.status == StoryDownloadStatus.queued;
+                      final hasFailed =
+                          download?.status == StoryDownloadStatus.failed;
+                      return IconButton(
+                        key: Key('save-story-${item.id}'),
+                        onPressed: isDownloading || isQueued
+                            ? null
+                            : () => _toggleSaved(context),
+                        tooltip: isDownloading
+                            ? 'Downloading story'
+                            : isQueued
+                            ? 'Queued for download'
+                            : hasFailed
+                            ? 'Retry download'
+                            : isSaved
+                            ? 'Remove from saved'
+                            : 'Save story for offline reading',
+                        visualDensity: VisualDensity.compact,
+                        constraints: const BoxConstraints.tightFor(
+                          width: 32,
+                          height: 28,
+                        ),
+                        icon: isDownloading
+                            ? const SizedBox.square(
+                                dimension: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : isQueued
+                            ? const Icon(Icons.schedule_rounded, size: 18)
+                            : hasFailed
+                            ? const Icon(Icons.error_outline_rounded, size: 18)
+                            : Icon(
+                                isSaved
+                                    ? Icons.bookmark_rounded
+                                    : Icons.bookmark_border_rounded,
+                                size: 18,
+                              ),
+                      );
+                    },
                   ),
                 ],
               ),
@@ -635,6 +887,210 @@ class _StoryCard extends StatelessWidget {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _toggleSaved(BuildContext context) async {
+    try {
+      final result = await savedStories.toggle(item);
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          duration: const Duration(seconds: 1),
+          content: Text(switch (result) {
+            SaveRequestResult.queued => 'Added to download queue',
+            SaveRequestResult.removed => 'Removed from saved',
+            SaveRequestResult.alreadyQueued => 'Already in download queue',
+          }),
+        ),
+      );
+    } catch (_) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Couldn’t update saved stories')),
+      );
+    }
+  }
+}
+
+class _SavedStoriesView extends StatelessWidget {
+  const _SavedStoriesView({
+    required this.repository,
+    required this.savedStories,
+  });
+
+  final StoryRepository repository;
+  final SavedStoriesViewModel savedStories;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: savedStories,
+      builder: (context, _) {
+        final stories = savedStories.stories;
+        if (savedStories.isLoading) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (savedStories.loadError != null) {
+          return Center(
+            child: FilledButton.tonalIcon(
+              onPressed: savedStories.load,
+              icon: const Icon(Icons.refresh_rounded),
+              label: const Text('Retry loading saved stories'),
+            ),
+          );
+        }
+        if (stories.isEmpty) {
+          return const Center(
+            child: Padding(
+              padding: EdgeInsets.all(32),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.bookmarks_outlined, size: 42),
+                  SizedBox(height: 14),
+                  Text('No saved stories yet'),
+                  SizedBox(height: 6),
+                  Text(
+                    'Stories appear here after their download finishes.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: Color(0xFF7D8996)),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+        return ListView.separated(
+          key: const Key('saved-stories-list'),
+          padding: const EdgeInsets.all(10),
+          itemCount: stories.length,
+          separatorBuilder: (_, _) => const SizedBox(height: 6),
+          itemBuilder: (context, index) => _StoryCard(
+            item: stories[index],
+            repository: repository,
+            savedStories: savedStories,
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _DownloadsPage extends StatelessWidget {
+  const _DownloadsPage({required this.savedStories});
+
+  final SavedStoriesViewModel savedStories;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Downloads')),
+      body: ListenableBuilder(
+        listenable: savedStories,
+        builder: (context, _) {
+          final downloads = savedStories.downloads;
+          if (downloads.isEmpty) {
+            return const Center(
+              child: Padding(
+                padding: EdgeInsets.all(32),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.download_done_rounded, size: 42),
+                    SizedBox(height: 14),
+                    Text('No active downloads'),
+                    SizedBox(height: 6),
+                    Text(
+                      'Saved stories will appear here while downloading.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: Color(0xFF7D8996)),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }
+          return ListView.separated(
+            key: const Key('downloads-list'),
+            padding: const EdgeInsets.all(10),
+            itemCount: downloads.length,
+            separatorBuilder: (_, _) => const SizedBox(height: 6),
+            itemBuilder: (context, index) => _DownloadCard(
+              download: downloads[index],
+              savedStories: savedStories,
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _DownloadCard extends StatelessWidget {
+  const _DownloadCard({required this.download, required this.savedStories});
+
+  final StoryDownload download;
+  final SavedStoriesViewModel savedStories;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDownloading = download.status == StoryDownloadStatus.downloading;
+    final hasFailed = download.status == StoryDownloadStatus.failed;
+    return Card(
+      child: ListTile(
+        key: Key('download-${download.story.id}'),
+        leading: isDownloading
+            ? const SizedBox.square(
+                dimension: 24,
+                child: CircularProgressIndicator(strokeWidth: 2.5),
+              )
+            : Icon(
+                hasFailed
+                    ? Icons.error_outline_rounded
+                    : Icons.schedule_rounded,
+                color: hasFailed
+                    ? Theme.of(context).colorScheme.error
+                    : Theme.of(context).colorScheme.primary,
+              ),
+        title: Text(
+          download.story.title,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        subtitle: Text(
+          switch (download.status) {
+            StoryDownloadStatus.queued => 'Waiting',
+            StoryDownloadStatus.downloading => 'Downloading for offline use…',
+            StoryDownloadStatus.failed => 'Download failed',
+          },
+          style: TextStyle(
+            color: hasFailed
+                ? Theme.of(context).colorScheme.error
+                : const Color(0xFF8D98A5),
+          ),
+        ),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (hasFailed)
+              IconButton(
+                key: Key('retry-download-${download.story.id}'),
+                tooltip: 'Retry',
+                onPressed: () => savedStories.retryDownload(download.story.id),
+                icon: const Icon(Icons.refresh_rounded),
+              ),
+            IconButton(
+              key: Key('remove-download-${download.story.id}'),
+              tooltip: 'Remove download',
+              onPressed: isDownloading
+                  ? null
+                  : () => savedStories.removeDownload(download.story.id),
+              icon: const Icon(Icons.close_rounded),
+            ),
+          ],
         ),
       ),
     );

@@ -2,15 +2,17 @@ import 'package:flutter/material.dart';
 
 import 'listor_home.dart';
 import 'literotica_api.dart';
+import 'local_story_store.dart';
 
 void main() {
   runApp(const ListorApp());
 }
 
 class ListorApp extends StatelessWidget {
-  const ListorApp({super.key, this.repository});
+  const ListorApp({super.key, this.repository, this.savedStoriesRepository});
 
   final StoryRepository? repository;
+  final SavedStoriesRepository? savedStoriesRepository;
 
   static const _blue = Color(0xFF2693FF);
   static const _background = Color(0xFF05070A);
@@ -58,7 +60,10 @@ class ListorApp extends StatelessWidget {
           displayColor: Colors.white,
         ),
       ),
-      home: ListorHomePage(repository: repository),
+      home: ListorHomePage(
+        repository: repository,
+        savedStoriesRepository: savedStoriesRepository,
+      ),
     );
   }
 }

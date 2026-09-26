@@ -7,28 +7,63 @@ import 'package:shared_preferences/shared_preferences.dart';
 void main() {
   final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('loads another Non Erotic page after scrolling', (tester) async {
+  testWidgets('paginates and saves a Non Erotic story locally', (tester) async {
     SharedPreferences.setMockInitialValues(const {});
     app.main();
 
     final listFinder = find.byKey(const Key('feed-list-newest'));
     await _pumpUntil(tester, () => listFinder.evaluate().isNotEmpty);
 
-    final list = tester.widget<ListView>(listFinder);
-    final controller = list.controller!;
-    final initialExtent = controller.position.maxScrollExtent;
+    final scrollableFinder = find.descendant(
+      of: listFinder,
+      matching: find.byType(Scrollable),
+    );
+    final position = tester.state<ScrollableState>(scrollableFinder).position;
+    final initialExtent = position.maxScrollExtent;
     expect(initialExtent, greaterThan(0));
     await binding.takeScreenshot('non-erotic-first-page');
 
-    controller.jumpTo(initialExtent);
+    await tester.fling(listFinder, const Offset(0, -900), 1400);
+    await tester.pumpAndSettle();
+    expect(
+      tester.getSize(find.byKey(const Key('bottom-navigation-shell'))).height,
+      0,
+    );
+    await binding.takeScreenshot('non-erotic-collapsed-chrome');
+
+    position.jumpTo(position.maxScrollExtent);
     await tester.pump();
+    await _pumpUntil(tester, () => position.maxScrollExtent > initialExtent);
+
+    expect(position.maxScrollExtent, greaterThan(initialExtent));
+    await binding.takeScreenshot('non-erotic-next-page');
+
+    final saveButton = find
+        .byTooltip('Save story for offline reading')
+        .hitTestable()
+        .first;
+    expect(saveButton, findsOneWidget);
+    await tester.tap(saveButton);
     await _pumpUntil(
       tester,
-      () => controller.position.maxScrollExtent > initialExtent,
+      () => find.byTooltip('Remove from saved').evaluate().isNotEmpty,
     );
 
-    expect(controller.position.maxScrollExtent, greaterThan(initialExtent));
-    await binding.takeScreenshot('non-erotic-next-page');
+    await tester.fling(listFinder, const Offset(0, 500), 1200);
+    await tester.pumpAndSettle();
+    final savedDestination = find
+        .byKey(const Key('saved-destination'))
+        .hitTestable();
+    expect(savedDestination, findsOneWidget);
+    await tester.tap(savedDestination);
+    await _pumpUntil(
+      tester,
+      () => find.byKey(const Key('saved-stories-list')).evaluate().isNotEmpty,
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Saved'), findsWidgets);
+    await tester.pump(const Duration(seconds: 2));
+    await binding.takeScreenshot('saved-stories-sqlite');
   });
 }
 
