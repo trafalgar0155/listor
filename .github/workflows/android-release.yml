@@ -85,6 +85,7 @@ jobs:
           path: build/app/outputs/flutter-apk/app-release.apk
           if-no-files-found: error
           retention-days: 30
+          archive: false
 
       - name: Remove signing material
         if: always()
