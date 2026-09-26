@@ -26,3 +26,16 @@ flutter run
 ```
 
 Run checks with `flutter analyze` and `flutter test`.
+
+## Signed Android CI
+
+`.github/workflows/android-release.yml` builds a signed release APK on pushes
+to `main` and manual runs. Add these repository Actions secrets before running
+it:
+
+- `ANDROID_KEYSTORE_BASE64`
+- `ANDROID_KEYSTORE_PASSWORD`
+- `ANDROID_KEY_ALIAS`
+- `ANDROID_KEY_PASSWORD`
+
+The APK is available from the completed workflow run as a 30-day artifact.
