@@ -148,32 +148,29 @@ class _ListorHomePageState extends State<ListorHomePage> {
           height: _showNavigation ? navigationHeight : 0,
           clipBehavior: Clip.hardEdge,
           decoration: const BoxDecoration(),
-          child: SafeArea(
-            top: false,
-            child: NavigationBar(
-              height: 60,
-              selectedIndex: _destinationIndex,
-              onDestinationSelected: (index) {
-                setState(() {
-                  _destinationIndex = index;
-                  _showNavigation = true;
-                });
-              },
-              destinations: const [
-                NavigationDestination(
-                  key: Key('explore-destination'),
-                  icon: Icon(Icons.explore_outlined),
-                  selectedIcon: Icon(Icons.explore_rounded),
-                  label: 'Explore',
-                ),
-                NavigationDestination(
-                  key: Key('saved-destination'),
-                  icon: Icon(Icons.bookmarks_outlined),
-                  selectedIcon: Icon(Icons.bookmarks_rounded),
-                  label: 'Saved',
-                ),
-              ],
-            ),
+          child: NavigationBar(
+            height: 60,
+            selectedIndex: _destinationIndex,
+            onDestinationSelected: (index) {
+              setState(() {
+                _destinationIndex = index;
+                _showNavigation = true;
+              });
+            },
+            destinations: const [
+              NavigationDestination(
+                key: Key('explore-destination'),
+                icon: Icon(Icons.explore_outlined),
+                selectedIcon: Icon(Icons.explore_rounded),
+                label: 'Explore',
+              ),
+              NavigationDestination(
+                key: Key('saved-destination'),
+                icon: Icon(Icons.bookmarks_outlined),
+                selectedIcon: Icon(Icons.bookmarks_rounded),
+                label: 'Saved',
+              ),
+            ],
           ),
         ),
       ),
