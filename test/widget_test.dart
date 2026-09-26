@@ -170,6 +170,68 @@ void main() {
     final html = tester.widget<Html>(find.byType(Html));
     expect(html.data, contains('<strong>Opening line</strong>'));
     expect(html.data, contains('<em>emphasis</em>'));
+
+    await tester.tap(find.byKey(const Key('story-author-link')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('author-works-page')), findsOneWidget);
+  });
+
+  testWidgets('opens an author’s series and standalone stories', (
+    tester,
+  ) async {
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('author-35000')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('author-works-page')), findsOneWidget);
+    expect(find.text('Test Author'), findsOneWidget);
+    expect(find.text('Series'), findsOneWidget);
+    expect(find.text('Stories'), findsOneWidget);
+    expect(find.text('Harbour Lights'), findsOneWidget);
+    expect(find.text('A Standalone Work'), findsOneWidget);
+    expect(find.text('Harbour Lights Ch. 01'), findsNothing);
+
+    await tester.tap(find.byKey(const Key('author-series-900')));
+    await tester.pumpAndSettle();
+    expect(find.text('Harbour Lights Ch. 01'), findsOneWidget);
+    expect(find.text('Harbour Lights Ch. 02'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('author-story-901')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('story-reader')), findsOneWidget);
+  });
+
+  testWidgets('queues every story when downloading a series', (tester) async {
+    final seriesDownload = Completer<StoryDocument>();
+    repository.storyResponse = seriesDownload;
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('author-35000')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('download-series-900')));
+    await tester.pump();
+
+    expect(savedStoriesRepository.downloads, hasLength(2));
+    expect(
+      savedStoriesRepository.downloads.map((download) => download.story.id),
+      [901, 902],
+    );
+    expect(find.byTooltip('Series download in progress'), findsOneWidget);
+
+    seriesDownload.complete(
+      const StoryDocument(pages: ['<p>Downloaded series story.</p>']),
+    );
+    await tester.pumpAndSettle();
+
+    expect(savedStoriesRepository.downloads, isEmpty);
+    expect(
+      savedStoriesRepository.stories.map((story) => story.id),
+      containsAll([901, 902]),
+    );
+    expect(find.byTooltip('Series downloaded'), findsOneWidget);
   });
 
   testWidgets('lays out without errors at phone width', (tester) async {
@@ -245,6 +307,55 @@ class _FakeStoryRepository implements StoryRepository {
   final requests = <_Request>[];
   int storyFetchCount = 0;
   Completer<StoryDocument>? storyResponse;
+
+  @override
+  Future<AuthorWorks> fetchAuthorWorks(String author) async => AuthorWorks(
+    author: author,
+    series: [
+      AuthorSeries(
+        id: 900,
+        title: 'Harbour Lights',
+        description: 'A connected series.',
+        stories: [
+          ListorItem(
+            id: 901,
+            title: 'Harbour Lights Ch. 01',
+            description: 'The first chapter.',
+            category: ListorCategory.nonErotic,
+            author: author,
+            approvedAt: DateTime(2026, 9, 20),
+            favoriteCount: 4,
+            rating: 4.2,
+            url: Uri.parse('https://www.literotica.com/s/harbour-lights-1'),
+          ),
+          ListorItem(
+            id: 902,
+            title: 'Harbour Lights Ch. 02',
+            description: 'The second chapter.',
+            category: ListorCategory.nonErotic,
+            author: author,
+            approvedAt: DateTime(2026, 9, 21),
+            favoriteCount: 5,
+            rating: 4.3,
+            url: Uri.parse('https://www.literotica.com/s/harbour-lights-2'),
+          ),
+        ],
+      ),
+    ],
+    stories: [
+      ListorItem(
+        id: 903,
+        title: 'A Standalone Work',
+        description: 'Not part of a series.',
+        category: ListorCategory.nonErotic,
+        author: author,
+        approvedAt: DateTime(2026, 9, 22),
+        favoriteCount: 6,
+        rating: 4.4,
+        url: Uri.parse('https://www.literotica.com/s/a-standalone-work'),
+      ),
+    ],
+  );
 
   @override
   Future<StoryFeedPage> fetchFeed(

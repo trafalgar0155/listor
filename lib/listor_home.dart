@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'author_works.dart';
 import 'literotica_api.dart';
 import 'local_story_store.dart';
 import 'story_reader.dart';
@@ -755,8 +756,11 @@ class _StoryCard extends StatelessWidget {
         onTap: () {
           Navigator.of(context).push(
             MaterialPageRoute<void>(
-              builder: (_) =>
-                  StoryReaderPage(story: item, repository: repository),
+              builder: (_) => StoryReaderPage(
+                story: item,
+                repository: repository,
+                onAuthorTap: () => _openAuthor(context),
+              ),
             ),
           );
         },
@@ -864,13 +868,24 @@ class _StoryCard extends StatelessWidget {
                   ),
                   const SizedBox(width: 8),
                   Expanded(
-                    child: Text(
-                      item.author,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Color(0xFF8D98A5),
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: InkWell(
+                        key: Key('author-${item.id}'),
+                        onTap: () => _openAuthor(context),
+                        borderRadius: BorderRadius.circular(4),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 2),
+                          child: Text(
+                            item.author,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: colorScheme.primary,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
                       ),
                     ),
                   ),
@@ -887,6 +902,18 @@ class _StoryCard extends StatelessWidget {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  void _openAuthor(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => AuthorWorksPage(
+          author: item.author,
+          repository: repository,
+          savedStories: savedStories,
         ),
       ),
     );

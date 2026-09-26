@@ -246,6 +246,7 @@ class SqliteSavedStoriesRepository implements SavedStoriesRepository {
     : _database = database ?? StoryDatabaseService();
 
   final StoryDatabaseService _database;
+  int _lastQueuedAt = 0;
 
   @override
   Future<List<ListorItem>> readAll() async {
@@ -303,11 +304,14 @@ class SqliteSavedStoriesRepository implements SavedStoriesRepository {
 
   @override
   Future<void> enqueueDownload(ListorItem story) {
+    final now = DateTime.now().microsecondsSinceEpoch;
+    final queuedAt = now > _lastQueuedAt ? now : _lastQueuedAt + 1;
+    _lastQueuedAt = queuedAt;
     return _database.insertDownload({
       ..._storyValues(story),
       'status': StoryDownloadStatus.queued.name,
       'error': null,
-      'queued_at': DateTime.now().millisecondsSinceEpoch,
+      'queued_at': queuedAt,
     });
   }
 
@@ -327,6 +331,10 @@ class OfflineFirstStoryRepository implements StoryRepository {
 
   final StoryRepository _remote;
   final SavedStoriesRepository _local;
+
+  @override
+  Future<AuthorWorks> fetchAuthorWorks(String author) =>
+      _remote.fetchAuthorWorks(author);
 
   @override
   Future<StoryFeedPage> fetchFeed(
@@ -373,6 +381,17 @@ class SavedStoriesViewModel extends ChangeNotifier {
   bool get isLoading => _isLoading;
   Object? get loadError => _loadError;
   bool isSaved(int storyId) => _savedStoryIds.contains(storyId);
+  bool isSeriesSaved(AuthorSeries series) =>
+      series.stories.isNotEmpty &&
+      series.stories.every((story) => isSaved(story.id));
+  bool isSeriesDownloading(AuthorSeries series) => series.stories.any((story) {
+    final status = downloadFor(story.id)?.status;
+    return status == StoryDownloadStatus.queued ||
+        status == StoryDownloadStatus.downloading;
+  });
+  bool hasFailedSeriesDownload(AuthorSeries series) => series.stories.any(
+    (story) => downloadFor(story.id)?.status == StoryDownloadStatus.failed,
+  );
   StoryDownload? downloadFor(int storyId) {
     for (final download in _downloads) {
       if (download.story.id == storyId) return download;
@@ -448,6 +467,38 @@ class SavedStoriesViewModel extends ChangeNotifier {
     notifyListeners();
     _startDownloadProcessor();
     return SaveRequestResult.queued;
+  }
+
+  Future<int> downloadSeries(AuthorSeries series) async {
+    await load();
+    if (!_hasLoaded) throw StateError('Saved stories could not be loaded.');
+
+    var queuedCount = 0;
+    for (final story in series.stories) {
+      if (_savedStoryIds.contains(story.id)) continue;
+      final existing = downloadFor(story.id);
+      if (existing == null) {
+        await _repository.enqueueDownload(story);
+        _downloads.add(
+          StoryDownload(story: story, status: StoryDownloadStatus.queued),
+        );
+        queuedCount++;
+      } else if (existing.status == StoryDownloadStatus.failed) {
+        await _repository.updateDownload(story.id, StoryDownloadStatus.queued);
+        final index = _downloads.indexWhere(
+          (download) => download.story.id == story.id,
+        );
+        _downloads[index] = existing.copyWith(
+          status: StoryDownloadStatus.queued,
+        );
+        queuedCount++;
+      }
+    }
+    if (queuedCount > 0) {
+      notifyListeners();
+      _startDownloadProcessor();
+    }
+    return queuedCount;
   }
 
   Future<void> retryDownload(int storyId) async {

@@ -8,10 +8,12 @@ class StoryReaderPage extends StatefulWidget {
     super.key,
     required this.story,
     required this.repository,
+    this.onAuthorTap,
   });
 
   final ListorItem story;
   final StoryRepository repository;
+  final VoidCallback? onAuthorTap;
 
   @override
   State<StoryReaderPage> createState() => _StoryReaderPageState();
@@ -43,7 +45,11 @@ class _StoryReaderPageState extends State<StoryReaderPage> {
           if (!snapshot.hasData) {
             return const Center(child: CircularProgressIndicator());
           }
-          return _StoryBody(story: widget.story, document: snapshot.data!);
+          return _StoryBody(
+            story: widget.story,
+            document: snapshot.data!,
+            onAuthorTap: widget.onAuthorTap,
+          );
         },
       ),
     );
@@ -51,10 +57,15 @@ class _StoryReaderPageState extends State<StoryReaderPage> {
 }
 
 class _StoryBody extends StatelessWidget {
-  const _StoryBody({required this.story, required this.document});
+  const _StoryBody({
+    required this.story,
+    required this.document,
+    required this.onAuthorTap,
+  });
 
   final ListorItem story;
   final StoryDocument document;
+  final VoidCallback? onAuthorTap;
 
   @override
   Widget build(BuildContext context) {
@@ -74,13 +85,31 @@ class _StoryBody extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 8),
-          Text(
-            '${story.author}  •  ${story.category.label}',
-            style: TextStyle(
-              color: Theme.of(context).colorScheme.primary,
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-            ),
+          Row(
+            children: [
+              TextButton(
+                key: const Key('story-author-link'),
+                onPressed: onAuthorTap,
+                style: TextButton.styleFrom(
+                  padding: EdgeInsets.zero,
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  textStyle: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                child: Text(story.author),
+              ),
+              Text(
+                '  •  ${story.category.label}',
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.primary,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 22),
           const Divider(),

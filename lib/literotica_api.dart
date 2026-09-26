@@ -145,6 +145,32 @@ class StoryFeedPage {
   final bool hasMore;
 }
 
+class AuthorSeries {
+  const AuthorSeries({
+    required this.id,
+    required this.title,
+    required this.description,
+    required this.stories,
+  });
+
+  final int id;
+  final String title;
+  final String description;
+  final List<ListorItem> stories;
+}
+
+class AuthorWorks {
+  const AuthorWorks({
+    required this.author,
+    required this.series,
+    required this.stories,
+  });
+
+  final String author;
+  final List<AuthorSeries> series;
+  final List<ListorItem> stories;
+}
+
 abstract interface class StoryRepository {
   Future<StoryFeedPage> fetchFeed(
     StoryFilters filters,
@@ -155,6 +181,8 @@ abstract interface class StoryRepository {
   Future<List<StoryTag>> fetchTags(ListorCategory category, StoryPeriod period);
 
   Future<StoryDocument> fetchStory(ListorItem story);
+
+  Future<AuthorWorks> fetchAuthorWorks(String author);
 }
 
 /// Dart implementation of the HTTP contract wrapped by LiteroticaApi 2.1.0.
@@ -166,6 +194,57 @@ class LiteroticaApiClient implements StoryRepository {
   final http.Client _client;
   final Random _random;
   final Map<String, int> _randomStartPages = {};
+
+  @override
+  Future<AuthorWorks> fetchAuthorWorks(String author) async {
+    final works = <Map<String, dynamic>>[];
+    var page = 1;
+    var lastPage = 1;
+    do {
+      final uri = Uri.https(
+        'literotica.com',
+        '/api/3/users/$author/series_and_works',
+        {
+          'params': jsonEncode({
+            'page': page,
+            'pageSize': 500,
+            'listType': 'expanded',
+            'sort': 'title',
+          }),
+        },
+      );
+      final decoded = await _getJson(uri);
+      final data = decoded['data'];
+      if (data is! List) {
+        throw const FormatException('Author works response is missing data.');
+      }
+      works.addAll(data.whereType<Map<String, dynamic>>());
+      lastPage = max(1, _asInt(decoded['last_page']));
+      page++;
+    } while (page <= lastPage);
+
+    final series = <AuthorSeries>[];
+    final stories = <ListorItem>[];
+    for (final work in works) {
+      final parts = work['parts'];
+      if (parts is List && parts.isNotEmpty) {
+        series.add(
+          AuthorSeries(
+            id: _asInt(work['id']),
+            title: work['title']?.toString() ?? 'Untitled series',
+            description: work['description']?.toString() ?? '',
+            stories: parts
+                .whereType<Map<String, dynamic>>()
+                .map((part) => _authorWorkItem(part, author))
+                .toList(),
+          ),
+        );
+      } else {
+        stories.add(_authorWorkItem(work, author));
+      }
+    }
+    return AuthorWorks(author: author, series: series, stories: stories);
+  }
 
   @override
   Future<StoryDocument> fetchStory(ListorItem story) async {
@@ -402,6 +481,42 @@ class LiteroticaApiClient implements StoryRepository {
   }
 }
 
+ListorItem _authorWorkItem(Map<String, dynamic> json, String author) {
+  final categoryId = _asInt(
+    json['category'] ??
+        (json['category_info'] is Map<String, dynamic>
+            ? (json['category_info'] as Map<String, dynamic>)['id']
+            : null),
+  );
+  final category = ListorCategory.values.firstWhere(
+    (candidate) => candidate.id == categoryId,
+    orElse: () => ListorCategory.nonErotic,
+  );
+  final rawAuthor = json['author'];
+  final username = rawAuthor is Map<String, dynamic>
+      ? rawAuthor['username']?.toString()
+      : json['authorname']?.toString();
+  return ListorItem(
+    id: _asInt(json['id']),
+    title: json['title']?.toString() ?? 'Untitled',
+    description: json['description']?.toString() ?? '',
+    category: category,
+    author: username?.isNotEmpty == true ? username! : author,
+    approvedAt: _parseApiDate(json['date_approve']?.toString()),
+    favoriteCount: _asInt(json['favorite_count']),
+    rating: _asDouble(json['rate_all']),
+    url: _storyUri(json['url']),
+  );
+}
+
+Uri _storyUri(Object? value) {
+  final raw = value?.toString().trim() ?? '';
+  final absolute = Uri.tryParse(raw);
+  if (absolute?.hasScheme == true) return absolute!;
+  final slug = raw.replaceFirst(RegExp(r'^/?s/'), '');
+  return Uri.https('www.literotica.com', '/s/$slug');
+}
+
 class LiteroticaApiException implements Exception {
   const LiteroticaApiException(this.message);
   final String message;
@@ -442,6 +557,9 @@ DateTime? _parseUsDate(String? value) {
       ? null
       : DateTime(year, month, day);
 }
+
+DateTime? _parseApiDate(String? value) =>
+    _parseUsDate(value) ?? DateTime.tryParse(value ?? '');
 
 int _dateValue(ListorItem item) => item.approvedAt?.millisecondsSinceEpoch ?? 0;
 

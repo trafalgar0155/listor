@@ -121,10 +121,45 @@ void main() {
       await repository.removeDownload(_story.id);
       expect(await repository.readDownloads(), isEmpty);
     });
+
+    test('preserves series story order in the persistent queue', () async {
+      final first = _storyWith(id: 100, title: 'Series Part 01');
+      final second = _storyWith(id: 50, title: 'Series Part 02');
+      await repository.enqueueDownload(first);
+      await repository.enqueueDownload(second);
+      await database.close();
+
+      database = StoryDatabaseService(
+        databaseFactory: databaseFactoryFfi,
+        databasePath: databasePath,
+      );
+      repository = SqliteSavedStoriesRepository(database: database);
+
+      expect((await repository.readDownloads()).map((item) => item.story.id), [
+        100,
+        50,
+      ]);
+    });
   });
 }
 
+ListorItem _storyWith({required int id, required String title}) => ListorItem(
+  id: id,
+  title: title,
+  description: _story.description,
+  category: _story.category,
+  author: _story.author,
+  approvedAt: _story.approvedAt,
+  favoriteCount: _story.favoriteCount,
+  rating: _story.rating,
+  url: Uri.parse('https://www.literotica.com/s/series-part-$id'),
+);
+
 class _FailingStoryRepository implements StoryRepository {
+  @override
+  Future<AuthorWorks> fetchAuthorWorks(String author) =>
+      throw StateError('Network should not be used.');
+
   @override
   Future<StoryFeedPage> fetchFeed(
     StoryFilters filters,

@@ -184,6 +184,69 @@ void main() {
     expect(document.pages.first, contains('<strong>Title</strong>'));
     expect(document.pages.last, contains('<em>emphasis</em>'));
   });
+
+  test('loads an author’s series and standalone stories', () async {
+    late Uri requestedUri;
+    final client = MockClient((request) async {
+      requestedUri = request.url;
+      return http.Response(
+        jsonEncode({
+          'current_page': 1,
+          'last_page': 1,
+          'data': [
+            {
+              'id': 90,
+              'title': 'Harbour Lights',
+              'description': 'A connected series.',
+              'parts': [
+                {
+                  'id': 91,
+                  'title': 'Harbour Lights Ch. 01',
+                  'description': 'The beginning.',
+                  'category': 35,
+                  'authorname': 'Sample Author',
+                  'date_approve': '09/20/2026',
+                  'favorite_count': 8,
+                  'rate_all': 4.6,
+                  'url': 'harbour-lights-1',
+                },
+                {
+                  'id': 92,
+                  'title': 'Harbour Lights Ch. 02',
+                  'description': 'The continuation.',
+                  'category': 35,
+                  'authorname': 'Sample Author',
+                  'url': 'harbour-lights-2',
+                },
+              ],
+            },
+            {
+              ..._story(id: 93, title: 'Standalone Story'),
+              'parts': null,
+              'url': 'standalone-story',
+            },
+          ],
+        }),
+        200,
+      );
+    });
+
+    final works = await LiteroticaApiClient(
+      client: client,
+    ).fetchAuthorWorks('Sample Author');
+    final params = jsonDecode(requestedUri.queryParameters['params']!);
+
+    expect(requestedUri.path, '/api/3/users/Sample%20Author/series_and_works');
+    expect(params['pageSize'], 500);
+    expect(params['listType'], 'expanded');
+    expect(params['sort'], 'title');
+    expect(works.series.single.title, 'Harbour Lights');
+    expect(works.series.single.stories.map((story) => story.title), [
+      'Harbour Lights Ch. 01',
+      'Harbour Lights Ch. 02',
+    ]);
+    expect(works.stories.single.title, 'Standalone Story');
+  });
 }
 
 String _response({int total = 1, List<Map<String, Object?>>? stories}) =>
