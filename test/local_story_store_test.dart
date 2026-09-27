@@ -249,6 +249,13 @@ class _FailingStoryRepository implements StoryRepository {
     ListorCategory category,
     StoryPeriod period,
   ) => throw StateError('Network should not be used.');
+
+  @override
+  Future<StoryFeedPage> searchStories(
+    String query,
+    ListorCategory category, {
+    int page = 0,
+  }) => throw StateError('Network should not be used.');
 }
 
 final _story = ListorItem(

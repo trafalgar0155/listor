@@ -84,6 +84,35 @@ void main() {
     expect(batch.hasMore, isTrue);
   });
 
+  test('searches by text and selected category with pagination', () async {
+    late Uri requestedUri;
+    final client = MockClient((request) async {
+      requestedUri = request.url;
+      return http.Response(
+        _response(
+          total: 101,
+          stories: [
+            {..._story(title: 'Moonlit Harbour'), 'category': 15},
+          ],
+        ),
+        200,
+      );
+    });
+
+    final result = await LiteroticaApiClient(
+      client: client,
+    ).searchStories('moonlit harbour', ListorCategory.romance, page: 1);
+    final params = jsonDecode(requestedUri.queryParameters['params']!);
+
+    expect(requestedUri.path, '/api/3/search/stories');
+    expect(params['q'], 'moonlit harbour');
+    expect(params['categories'], [15]);
+    expect(params['page'], 2);
+    expect(result.items.single.title, 'Moonlit Harbour');
+    expect(result.items.single.category, ListorCategory.romance);
+    expect(result.hasMore, isTrue);
+  });
+
   test('throws a readable error for a failed response', () async {
     final client = MockClient((_) async => http.Response('unavailable', 503));
     final api = LiteroticaApiClient(client: client);

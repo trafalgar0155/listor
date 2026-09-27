@@ -367,6 +367,13 @@ class OfflineFirstStoryRepository implements StoryRepository {
       _remote.fetchAuthorWorks(author);
 
   @override
+  Future<StoryFeedPage> searchStories(
+    String query,
+    ListorCategory category, {
+    int page = 0,
+  }) => _remote.searchStories(query, category, page: page);
+
+  @override
   Future<StoryFeedPage> fetchFeed(
     StoryFilters filters,
     FeedType feed, {

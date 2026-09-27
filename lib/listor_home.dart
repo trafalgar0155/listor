@@ -7,6 +7,7 @@ import 'author_works.dart';
 import 'literotica_api.dart';
 import 'local_story_store.dart';
 import 'story_reader.dart';
+import 'story_search.dart';
 
 class ListorHomePage extends StatefulWidget {
   const ListorHomePage({
@@ -117,6 +118,11 @@ class _ListorHomePageState extends State<ListorHomePage> {
               savedStories: _savedStories,
               onScroll: _handleScroll,
             ),
+            _SearchDestination(
+              repository: _repository,
+              savedStories: _savedStories,
+              onScroll: _handleScroll,
+            ),
             _SavedDestination(
               repository: _repository,
               savedStories: _savedStories,
@@ -163,6 +169,12 @@ class _ListorHomePageState extends State<ListorHomePage> {
                 icon: Icon(Icons.explore_outlined),
                 selectedIcon: Icon(Icons.explore_rounded),
                 label: 'Explore',
+              ),
+              NavigationDestination(
+                key: Key('search-destination'),
+                icon: Icon(Icons.search_rounded),
+                selectedIcon: Icon(Icons.manage_search_rounded),
+                label: 'Search',
               ),
               NavigationDestination(
                 key: Key('saved-destination'),
@@ -232,6 +244,300 @@ class _ExploreView extends StatelessWidget {
                 repository: repository,
                 savedStories: savedStories,
               ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SearchDestination extends StatefulWidget {
+  const _SearchDestination({
+    required this.repository,
+    required this.savedStories,
+    required this.onScroll,
+  });
+
+  final StoryRepository repository;
+  final SavedStoriesViewModel savedStories;
+  final NotificationListenerCallback<ScrollNotification> onScroll;
+
+  @override
+  State<_SearchDestination> createState() => _SearchDestinationState();
+}
+
+class _SearchDestinationState extends State<_SearchDestination> {
+  late final StorySearchViewModel _viewModel;
+  final _queryController = TextEditingController();
+  Timer? _debounce;
+
+  @override
+  void initState() {
+    super.initState();
+    _viewModel = StorySearchViewModel(repository: widget.repository);
+  }
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    _queryController.dispose();
+    _viewModel.dispose();
+    super.dispose();
+  }
+
+  void _scheduleSearch(String query) {
+    _debounce?.cancel();
+    _debounce = Timer(
+      const Duration(milliseconds: 350),
+      () => _viewModel.search(query),
+    );
+  }
+
+  void _searchNow(String query) {
+    _debounce?.cancel();
+    _viewModel.search(query);
+  }
+
+  void _clearSearch() {
+    _debounce?.cancel();
+    _queryController.clear();
+    _viewModel.search('');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return NotificationListener<ScrollNotification>(
+      onNotification: widget.onScroll,
+      child: NestedScrollView(
+        floatHeaderSlivers: true,
+        headerSliverBuilder: (context, innerBoxIsScrolled) => [
+          SliverAppBar(
+            floating: true,
+            snap: true,
+            toolbarHeight: 48,
+            titleSpacing: 16,
+            title: Text(
+              'Search',
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.w800,
+                letterSpacing: -0.6,
+              ),
+            ),
+          ),
+        ],
+        body: ListenableBuilder(
+          listenable: _viewModel,
+          builder: (context, _) => Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
+                child: Column(
+                  children: [
+                    TextField(
+                      key: const Key('story-search-field'),
+                      controller: _queryController,
+                      textInputAction: TextInputAction.search,
+                      autofocus: false,
+                      onChanged: _scheduleSearch,
+                      onSubmitted: _searchNow,
+                      decoration: InputDecoration(
+                        hintText: 'Search stories',
+                        prefixIcon: const Icon(Icons.search_rounded),
+                        suffixIcon: _viewModel.query.isEmpty
+                            ? null
+                            : IconButton(
+                                key: const Key('clear-story-search'),
+                                tooltip: 'Clear search',
+                                onPressed: _clearSearch,
+                                icon: const Icon(Icons.close_rounded),
+                              ),
+                        filled: true,
+                        fillColor: const Color(0xFF0D1117),
+                        border: const OutlineInputBorder(
+                          borderRadius: BorderRadius.all(Radius.circular(16)),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    DropdownButtonFormField<ListorCategory>(
+                      key: const Key('search-category-filter'),
+                      initialValue: _viewModel.category,
+                      isExpanded: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Category',
+                        prefixIcon: Icon(Icons.category_outlined),
+                        filled: true,
+                        fillColor: Color(0xFF0D1117),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.all(Radius.circular(16)),
+                        ),
+                      ),
+                      items: [
+                        for (final category in ListorCategory.values)
+                          DropdownMenuItem(
+                            value: category,
+                            child: Text(category.label),
+                          ),
+                      ],
+                      onChanged: (category) {
+                        if (category == null) return;
+                        _debounce?.cancel();
+                        _viewModel.search(
+                          _queryController.text,
+                          inCategory: category,
+                        );
+                      },
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: _SearchResults(
+                  viewModel: _viewModel,
+                  repository: widget.repository,
+                  savedStories: widget.savedStories,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SearchResults extends StatelessWidget {
+  const _SearchResults({
+    required this.viewModel,
+    required this.repository,
+    required this.savedStories,
+  });
+
+  final StorySearchViewModel viewModel;
+  final StoryRepository repository;
+  final SavedStoriesViewModel savedStories;
+
+  @override
+  Widget build(BuildContext context) {
+    if (viewModel.query.isEmpty) {
+      return const _SearchMessage(
+        icon: Icons.manage_search_rounded,
+        title: 'Find a story',
+        message: 'Enter a title or keyword and choose a category.',
+      );
+    }
+    if (viewModel.isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (viewModel.error != null && viewModel.stories.isEmpty) {
+      return Center(
+        child: FilledButton.tonalIcon(
+          key: const Key('retry-story-search'),
+          onPressed: viewModel.retry,
+          icon: const Icon(Icons.refresh_rounded),
+          label: const Text('Retry search'),
+        ),
+      );
+    }
+    if (viewModel.stories.isEmpty) {
+      return const _SearchMessage(
+        icon: Icons.search_off_rounded,
+        title: 'No stories found',
+        message: 'Try another search or category.',
+      );
+    }
+
+    return NotificationListener<ScrollNotification>(
+      onNotification: (notification) {
+        if (notification is ScrollUpdateNotification &&
+            notification.metrics.extentAfter < 320) {
+          unawaited(viewModel.loadMore());
+        }
+        return false;
+      },
+      child: ListView.separated(
+        key: const Key('story-search-results'),
+        padding: const EdgeInsets.fromLTRB(10, 0, 10, 24),
+        itemCount: viewModel.stories.length + 1,
+        separatorBuilder: (_, _) => const SizedBox(height: 6),
+        itemBuilder: (context, index) {
+          if (index == viewModel.stories.length) {
+            return _SearchFooter(viewModel: viewModel);
+          }
+          return _StoryCard(
+            item: viewModel.stories[index],
+            repository: repository,
+            savedStories: savedStories,
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _SearchFooter extends StatelessWidget {
+  const _SearchFooter({required this.viewModel});
+
+  final StorySearchViewModel viewModel;
+
+  @override
+  Widget build(BuildContext context) {
+    if (viewModel.isLoadingMore) {
+      return const Padding(
+        padding: EdgeInsets.all(20),
+        child: Center(
+          child: SizedBox.square(
+            dimension: 24,
+            child: CircularProgressIndicator(strokeWidth: 2.5),
+          ),
+        ),
+      );
+    }
+    if (viewModel.error != null && viewModel.hasMore) {
+      return Padding(
+        padding: const EdgeInsets.all(12),
+        child: Center(
+          child: FilledButton.tonalIcon(
+            key: const Key('retry-more-search-results'),
+            onPressed: viewModel.loadMore,
+            icon: const Icon(Icons.refresh_rounded),
+            label: const Text('Retry loading more'),
+          ),
+        ),
+      );
+    }
+    return const SizedBox(height: 8);
+  }
+}
+
+class _SearchMessage extends StatelessWidget {
+  const _SearchMessage({
+    required this.icon,
+    required this.title,
+    required this.message,
+  });
+
+  final IconData icon;
+  final String title;
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 44, color: Theme.of(context).colorScheme.primary),
+            const SizedBox(height: 12),
+            Text(title, style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 6),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Color(0xFF8D98A5)),
+            ),
           ],
         ),
       ),

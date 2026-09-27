@@ -33,7 +33,47 @@ void main() {
     expect(find.text('Popular'), findsOneWidget);
     expect(find.text('Random'), findsOneWidget);
     expect(find.byKey(const Key('explore-destination')), findsOneWidget);
+    expect(find.byKey(const Key('search-destination')), findsOneWidget);
     expect(find.byKey(const Key('saved-destination')), findsOneWidget);
+  });
+
+  testWidgets('searches stories and filters by category', (tester) async {
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('search-destination')));
+    await tester.pumpAndSettle();
+    expect(find.text('Find a story'), findsOneWidget);
+    expect(find.byKey(const Key('story-search-field')), findsOneWidget);
+    expect(find.byKey(const Key('search-category-filter')), findsOneWidget);
+
+    await tester.enterText(
+      find.byKey(const Key('story-search-field')),
+      'Harbour',
+    );
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pumpAndSettle();
+
+    expect(repository.searchRequests.last.query, 'Harbour');
+    expect(repository.searchRequests.last.category, ListorCategory.nonErotic);
+    expect(find.text('Harbour Search Result'), findsOneWidget);
+    expect(find.byKey(const Key('story-search-results')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('search-category-filter')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Non-Erotic Poetry').last);
+    await tester.pumpAndSettle();
+
+    expect(repository.searchRequests.last.query, 'Harbour');
+    expect(
+      repository.searchRequests.last.category,
+      ListorCategory.nonEroticPoetry,
+    );
+    expect(find.text('NON-EROTIC POETRY'), findsOneWidget);
+
+    await tester.tap(find.text('Harbour Search Result'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('story-reader')), findsOneWidget);
   });
 
   testWidgets('applies category, period, and multi-select tag filters', (
@@ -354,6 +394,8 @@ class _Request {
 
 class _FakeStoryRepository implements StoryRepository {
   final requests = <_Request>[];
+  final searchRequests =
+      <({String query, ListorCategory category, int page})>[];
   int storyFetchCount = 0;
   Completer<StoryDocument>? storyResponse;
 
@@ -445,6 +487,31 @@ class _FakeStoryRepository implements StoryRepository {
             rating: 4.5,
             url: Uri.parse('https://www.literotica.com/s/test-story'),
           ),
+      ],
+    );
+  }
+
+  @override
+  Future<StoryFeedPage> searchStories(
+    String query,
+    ListorCategory category, {
+    int page = 0,
+  }) async {
+    searchRequests.add((query: query, category: category, page: page));
+    return StoryFeedPage(
+      hasMore: false,
+      items: [
+        ListorItem(
+          id: 80000 + category.id + page,
+          title: '$query Search Result',
+          description: 'A matching story.',
+          category: category,
+          author: 'Search Author',
+          approvedAt: DateTime(2026, 9, 25),
+          favoriteCount: 9,
+          rating: 4.7,
+          url: Uri.parse('https://www.literotica.com/s/search-result'),
+        ),
       ],
     );
   }

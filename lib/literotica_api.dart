@@ -189,6 +189,12 @@ abstract interface class StoryRepository {
   Future<StoryDocument> fetchStory(ListorItem story);
 
   Future<AuthorWorks> fetchAuthorWorks(String author);
+
+  Future<StoryFeedPage> searchStories(
+    String query,
+    ListorCategory category, {
+    int page = 0,
+  });
 }
 
 /// Dart implementation of the HTTP contract wrapped by LiteroticaApi 2.1.0.
@@ -276,6 +282,23 @@ class LiteroticaApiClient implements StoryRepository {
       pages.add((await _storyPage(slug, page)).text);
     }
     return StoryDocument(pages: pages);
+  }
+
+  @override
+  Future<StoryFeedPage> searchStories(
+    String query,
+    ListorCategory category, {
+    int page = 0,
+  }) async {
+    final result = await _search(
+      category: category,
+      page: page + 1,
+      query: query.trim(),
+    );
+    return StoryFeedPage(
+      items: result.items,
+      hasMore: page + 1 < result.lastPage,
+    );
   }
 
   @override
@@ -424,10 +447,11 @@ class LiteroticaApiClient implements StoryRepository {
     required ListorCategory category,
     required int page,
     bool popular = false,
+    String query = '',
   }) async {
     // Version 2.1.0 serializes all arguments as JSON in one `params` value.
     final params = jsonEncode({
-      'q': '',
+      'q': query,
       'page': page,
       'categories': [category.id],
       'editorsChoice': false,
