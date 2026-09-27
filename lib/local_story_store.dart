@@ -55,7 +55,7 @@ class StoryDatabaseService {
     : _databaseFactory = databaseFactory ?? databaseFactorySqflitePlugin;
 
   static const _databaseName = 'listor.db';
-  static const _databaseVersion = 3;
+  static const _databaseVersion = 4;
   static const savedStoriesTable = 'saved_stories';
   static const storyPagesTable = 'story_pages';
   static const downloadsTable = 'downloads';
@@ -85,6 +85,12 @@ class StoryDatabaseService {
         onUpgrade: (database, oldVersion, newVersion) async {
           if (oldVersion < 2) await _createStoryPagesTable(database);
           if (oldVersion < 3) await _createDownloadsTable(database);
+          if (oldVersion < 4) {
+            await _addSeriesColumns(
+              database,
+              includeDownloads: oldVersion >= 3,
+            );
+          }
         },
       ),
     );
@@ -102,6 +108,9 @@ class StoryDatabaseService {
         favorite_count INTEGER NOT NULL,
         rating REAL,
         url TEXT NOT NULL,
+        series_id INTEGER,
+        series_title TEXT,
+        series_position INTEGER,
         saved_at INTEGER NOT NULL
       )
     ''');
@@ -132,11 +141,40 @@ class StoryDatabaseService {
         favorite_count INTEGER NOT NULL,
         rating REAL,
         url TEXT NOT NULL,
+        series_id INTEGER,
+        series_title TEXT,
+        series_position INTEGER,
         status TEXT NOT NULL,
         error TEXT,
         queued_at INTEGER NOT NULL
       )
     ''');
+  }
+
+  static Future<void> _addSeriesColumns(
+    Database database, {
+    required bool includeDownloads,
+  }) async {
+    await database.execute(
+      'ALTER TABLE $savedStoriesTable ADD COLUMN series_id INTEGER',
+    );
+    await database.execute(
+      'ALTER TABLE $savedStoriesTable ADD COLUMN series_title TEXT',
+    );
+    await database.execute(
+      'ALTER TABLE $savedStoriesTable ADD COLUMN series_position INTEGER',
+    );
+    if (includeDownloads) {
+      await database.execute(
+        'ALTER TABLE $downloadsTable ADD COLUMN series_id INTEGER',
+      );
+      await database.execute(
+        'ALTER TABLE $downloadsTable ADD COLUMN series_title TEXT',
+      );
+      await database.execute(
+        'ALTER TABLE $downloadsTable ADD COLUMN series_position INTEGER',
+      );
+    }
   }
 
   Future<List<Map<String, Object?>>> readSavedStories() async {
@@ -286,15 +324,7 @@ class SqliteSavedStoriesRepository implements SavedStoriesRepository {
   @override
   Future<void> save(ListorItem story, StoryDocument document) {
     return _database.upsertSavedStory({
-      'id': story.id,
-      'title': story.title,
-      'description': story.description,
-      'category_id': story.category.id,
-      'author': story.author,
-      'approved_at': story.approvedAt?.millisecondsSinceEpoch,
-      'favorite_count': story.favoriteCount,
-      'rating': story.rating,
-      'url': story.url.toString(),
+      ..._storyValues(story),
       'saved_at': DateTime.now().millisecondsSinceEpoch,
     }, document.pages);
   }
@@ -377,6 +407,34 @@ class SavedStoriesViewModel extends ChangeNotifier {
   Future<void>? _loadOperation;
 
   List<ListorItem> get stories => List.unmodifiable(_stories);
+  List<AuthorSeries> get savedSeries {
+    final grouped = <int, List<ListorItem>>{};
+    for (final story in _stories) {
+      final seriesId = story.seriesId;
+      if (seriesId == null || story.seriesTitle?.isNotEmpty != true) continue;
+      grouped.putIfAbsent(seriesId, () => []).add(story);
+    }
+    return [
+      for (final entry in grouped.entries)
+        AuthorSeries(
+          id: entry.key,
+          title: entry.value.first.seriesTitle!,
+          description: '',
+          stories: entry.value
+            ..sort(
+              (a, b) =>
+                  (a.seriesPosition ?? 0).compareTo(b.seriesPosition ?? 0),
+            ),
+        ),
+    ];
+  }
+
+  List<ListorItem> get standaloneStories => List.unmodifiable(
+    _stories.where(
+      (story) =>
+          story.seriesId == null || story.seriesTitle?.isNotEmpty != true,
+    ),
+  );
   List<StoryDownload> get downloads => List.unmodifiable(_downloads);
   bool get isLoading => _isLoading;
   Object? get loadError => _loadError;
@@ -601,6 +659,9 @@ Map<String, Object?> _storyValues(ListorItem story) {
     'favorite_count': story.favoriteCount,
     'rating': story.rating,
     'url': story.url.toString(),
+    'series_id': story.seriesId,
+    'series_title': story.seriesTitle,
+    'series_position': story.seriesPosition,
   };
 }
 
@@ -622,5 +683,8 @@ ListorItem _storyFromRow(Map<String, Object?> row) {
     favoriteCount: row['favorite_count']! as int,
     rating: (row['rating'] as num?)?.toDouble(),
     url: Uri.parse(row['url']! as String),
+    seriesId: row['series_id'] as int?,
+    seriesTitle: row['series_title'] as String?,
+    seriesPosition: row['series_position'] as int?,
   );
 }

@@ -52,6 +52,9 @@ void main() {
       expect(restored.favoriteCount, _story.favoriteCount);
       expect(restored.rating, _story.rating);
       expect(restored.url, _story.url);
+      expect(restored.seriesId, _story.seriesId);
+      expect(restored.seriesTitle, _story.seriesTitle);
+      expect(restored.seriesPosition, _story.seriesPosition);
       expect(
         (await repository.readDocument(_story.id))?.pages,
         _document.pages,
@@ -140,6 +143,76 @@ void main() {
         50,
       ]);
     });
+
+    test('migrates version 3 data and adds series metadata columns', () async {
+      await database.close();
+      final legacy = await databaseFactoryFfi.openDatabase(
+        databasePath,
+        options: OpenDatabaseOptions(
+          version: 3,
+          onCreate: (database, version) async {
+            await database.execute('''
+              CREATE TABLE saved_stories (
+                id INTEGER PRIMARY KEY,
+                title TEXT NOT NULL,
+                description TEXT NOT NULL,
+                category_id INTEGER NOT NULL,
+                author TEXT NOT NULL,
+                approved_at INTEGER,
+                favorite_count INTEGER NOT NULL,
+                rating REAL,
+                url TEXT NOT NULL,
+                saved_at INTEGER NOT NULL
+              )
+            ''');
+            await database.execute('''
+              CREATE TABLE downloads (
+                id INTEGER PRIMARY KEY,
+                title TEXT NOT NULL,
+                description TEXT NOT NULL,
+                category_id INTEGER NOT NULL,
+                author TEXT NOT NULL,
+                approved_at INTEGER,
+                favorite_count INTEGER NOT NULL,
+                rating REAL,
+                url TEXT NOT NULL,
+                status TEXT NOT NULL,
+                error TEXT,
+                queued_at INTEGER NOT NULL
+              )
+            ''');
+            await database.insert('saved_stories', {
+              'id': 5,
+              'title': 'Legacy Story',
+              'description': 'Saved before series support.',
+              'category_id': ListorCategory.nonErotic.id,
+              'author': 'Legacy Author',
+              'approved_at': null,
+              'favorite_count': 0,
+              'rating': null,
+              'url': 'https://www.literotica.com/s/legacy-story',
+              'saved_at': 1,
+            });
+          },
+        ),
+      );
+      await legacy.close();
+
+      database = StoryDatabaseService(
+        databaseFactory: databaseFactoryFfi,
+        databasePath: databasePath,
+      );
+      repository = SqliteSavedStoriesRepository(database: database);
+      final legacyStory = (await repository.readAll()).single;
+      expect(legacyStory.title, 'Legacy Story');
+      expect(legacyStory.seriesId, isNull);
+
+      await repository.enqueueDownload(_story);
+      final queued = (await repository.readDownloads()).single.story;
+      expect(queued.seriesId, _story.seriesId);
+      expect(queued.seriesTitle, _story.seriesTitle);
+      expect(queued.seriesPosition, _story.seriesPosition);
+    });
   });
 }
 
@@ -188,6 +261,9 @@ final _story = ListorItem(
   favoriteCount: 12,
   rating: 4.75,
   url: Uri.parse('https://www.literotica.com/s/a-quiet-harbour'),
+  seriesId: 7,
+  seriesTitle: 'Harbour Stories',
+  seriesPosition: 1,
 );
 
 const _document = StoryDocument(

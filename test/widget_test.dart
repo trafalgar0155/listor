@@ -232,6 +232,20 @@ void main() {
       containsAll([901, 902]),
     );
     expect(find.byTooltip('Series downloaded'), findsOneWidget);
+
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('saved-destination')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('saved-series-900')), findsOneWidget);
+    expect(find.text('Series'), findsOneWidget);
+    expect(find.text('Harbour Lights'), findsOneWidget);
+    expect(find.text('Harbour Lights Ch. 01'), findsNothing);
+    await tester.tap(find.byKey(const Key('saved-series-900')));
+    await tester.pumpAndSettle();
+    expect(find.text('Harbour Lights Ch. 01'), findsOneWidget);
+    expect(find.text('Harbour Lights Ch. 02'), findsOneWidget);
   });
 
   testWidgets('lays out without errors at phone width', (tester) async {
@@ -243,6 +257,41 @@ void main() {
     tester.view.physicalSize = const Size(390, 844);
     await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('uses mobile typography and supports large system text', (
+    tester,
+  ) async {
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+      tester.platformDispatcher.clearTextScaleFactorTestValue();
+    });
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(390, 844);
+    tester.platformDispatcher.textScaleFactorTestValue = 2;
+
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+
+    final title = tester.widget<Text>(find.text('A Quiet Harbour'));
+    final description = tester.widget<Text>(
+      find.text('A story supplied by the test repository.').first,
+    );
+    final author = tester.widget<Text>(
+      find.descendant(
+        of: find.byKey(const Key('author-35000')),
+        matching: find.text('Test Author'),
+      ),
+    );
+    final textTheme = Theme.of(
+      tester.element(find.text('A Quiet Harbour')),
+    ).textTheme;
+
+    expect(title.style?.fontSize, textTheme.titleMedium?.fontSize);
+    expect(description.style?.fontSize, textTheme.bodyMedium?.fontSize);
+    expect(author.style?.fontSize, textTheme.labelLarge?.fontSize);
     expect(tester.takeException(), isNull);
   });
 
@@ -327,6 +376,9 @@ class _FakeStoryRepository implements StoryRepository {
             favoriteCount: 4,
             rating: 4.2,
             url: Uri.parse('https://www.literotica.com/s/harbour-lights-1'),
+            seriesId: 900,
+            seriesTitle: 'Harbour Lights',
+            seriesPosition: 0,
           ),
           ListorItem(
             id: 902,
@@ -338,6 +390,9 @@ class _FakeStoryRepository implements StoryRepository {
             favoriteCount: 5,
             rating: 4.3,
             url: Uri.parse('https://www.literotica.com/s/harbour-lights-2'),
+            seriesId: 900,
+            seriesTitle: 'Harbour Lights',
+            seriesPosition: 1,
           ),
         ],
       ),

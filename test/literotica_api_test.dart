@@ -245,6 +245,10 @@ void main() {
       'Harbour Lights Ch. 01',
       'Harbour Lights Ch. 02',
     ]);
+    expect(works.series.single.stories.first.seriesId, 90);
+    expect(works.series.single.stories.first.seriesTitle, 'Harbour Lights');
+    expect(works.series.single.stories.first.seriesPosition, 0);
+    expect(works.series.single.stories.last.seriesPosition, 1);
     expect(works.stories.single.title, 'Standalone Story');
   });
 }

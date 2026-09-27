@@ -85,7 +85,8 @@ class _StoryBody extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 8),
-          Row(
+          Wrap(
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               TextButton(
                 key: const Key('story-author-link'),
@@ -94,8 +95,7 @@ class _StoryBody extends StatelessWidget {
                   padding: EdgeInsets.zero,
                   minimumSize: Size.zero,
                   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  textStyle: const TextStyle(
-                    fontSize: 13,
+                  textStyle: textTheme.labelLarge?.copyWith(
                     fontWeight: FontWeight.w700,
                   ),
                 ),
@@ -103,9 +103,8 @@ class _StoryBody extends StatelessWidget {
               ),
               Text(
                 '  •  ${story.category.label}',
-                style: TextStyle(
+                style: textTheme.labelLarge?.copyWith(
                   color: Theme.of(context).colorScheme.primary,
-                  fontSize: 13,
                   fontWeight: FontWeight.w700,
                 ),
               ),
@@ -120,7 +119,7 @@ class _StoryBody extends StatelessWidget {
                 margin: Margins.zero,
                 padding: HtmlPaddings.zero,
                 color: const Color(0xFFD8DEE6),
-                fontSize: FontSize(17),
+                fontSize: FontSize(textTheme.bodyLarge?.fontSize ?? 16),
                 lineHeight: const LineHeight(1.65),
               ),
               'p': Style(margin: Margins.only(bottom: 18)),
@@ -128,7 +127,7 @@ class _StoryBody extends StatelessWidget {
               'em': Style(fontStyle: FontStyle.italic),
               '.page-marker': Style(
                 color: const Color(0xFF6F7C89),
-                fontSize: FontSize(12),
+                fontSize: FontSize(textTheme.labelMedium?.fontSize ?? 12),
                 fontWeight: FontWeight.w700,
                 textAlign: TextAlign.center,
                 margin: Margins.only(top: 28, bottom: 28),

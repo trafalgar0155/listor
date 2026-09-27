@@ -97,6 +97,9 @@ class ListorItem {
     required this.favoriteCount,
     required this.rating,
     required this.url,
+    this.seriesId,
+    this.seriesTitle,
+    this.seriesPosition,
   });
 
   final int id;
@@ -108,6 +111,9 @@ class ListorItem {
   final int favoriteCount;
   final double? rating;
   final Uri url;
+  final int? seriesId;
+  final String? seriesTitle;
+  final int? seriesPosition;
 
   factory ListorItem.fromJson(
     Map<String, dynamic> json,
@@ -228,15 +234,24 @@ class LiteroticaApiClient implements StoryRepository {
     for (final work in works) {
       final parts = work['parts'];
       if (parts is List && parts.isNotEmpty) {
+        final seriesId = _asInt(work['id']);
+        final seriesTitle = work['title']?.toString() ?? 'Untitled series';
+        final partMaps = parts.whereType<Map<String, dynamic>>().toList();
         series.add(
           AuthorSeries(
-            id: _asInt(work['id']),
-            title: work['title']?.toString() ?? 'Untitled series',
+            id: seriesId,
+            title: seriesTitle,
             description: work['description']?.toString() ?? '',
-            stories: parts
-                .whereType<Map<String, dynamic>>()
-                .map((part) => _authorWorkItem(part, author))
-                .toList(),
+            stories: [
+              for (var index = 0; index < partMaps.length; index++)
+                _authorWorkItem(
+                  partMaps[index],
+                  author,
+                  seriesId: seriesId,
+                  seriesTitle: seriesTitle,
+                  seriesPosition: index,
+                ),
+            ],
           ),
         );
       } else {
@@ -481,7 +496,13 @@ class LiteroticaApiClient implements StoryRepository {
   }
 }
 
-ListorItem _authorWorkItem(Map<String, dynamic> json, String author) {
+ListorItem _authorWorkItem(
+  Map<String, dynamic> json,
+  String author, {
+  int? seriesId,
+  String? seriesTitle,
+  int? seriesPosition,
+}) {
   final categoryId = _asInt(
     json['category'] ??
         (json['category_info'] is Map<String, dynamic>
@@ -506,6 +527,9 @@ ListorItem _authorWorkItem(Map<String, dynamic> json, String author) {
     favoriteCount: _asInt(json['favorite_count']),
     rating: _asDouble(json['rate_all']),
     url: _storyUri(json['url']),
+    seriesId: seriesId,
+    seriesTitle: seriesTitle,
+    seriesPosition: seriesPosition,
   );
 }
 

@@ -442,7 +442,7 @@ class _FilterSheetState extends State<_FilterSheet> {
                   const SizedBox(height: 3),
                   const Text(
                     'Choose one or more',
-                    style: TextStyle(color: Color(0xFF7D8996), fontSize: 12),
+                    style: TextStyle(color: Color(0xFF7D8996)),
                   ),
                   const SizedBox(height: 10),
                   FutureBuilder<List<StoryTag>>(
@@ -550,7 +550,9 @@ class _FeedTabs extends StatelessWidget {
         indicatorWeight: 3,
         labelColor: Colors.white,
         unselectedLabelColor: const Color(0xFF7D8996),
-        labelStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+        labelStyle: Theme.of(
+          context,
+        ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
         tabs: const [
           Tab(text: 'New'),
           Tab(text: 'Popular'),
@@ -745,7 +747,9 @@ class _StoryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final textTheme = theme.textTheme;
     final rating = item.rating?.toStringAsFixed(1) ?? '—';
     return Card(
       clipBehavior: Clip.antiAlias,
@@ -773,7 +777,7 @@ class _StoryCard extends StatelessWidget {
                       item.title,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      style: textTheme.titleMedium?.copyWith(
                         height: 1.15,
                         fontWeight: FontWeight.w700,
                         letterSpacing: -0.15,
@@ -838,9 +842,8 @@ class _StoryCard extends StatelessWidget {
                   item.description,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: textTheme.bodyMedium?.copyWith(
                     color: Color(0xFFA2ACB7),
-                    fontSize: 11.5,
                     height: 1.2,
                   ),
                 ),
@@ -854,13 +857,15 @@ class _StoryCard extends StatelessWidget {
                     color: colorScheme.primary,
                   ),
                   const SizedBox(width: 4),
-                  Text(
-                    item.category.label.toUpperCase(),
-                    style: TextStyle(
-                      color: colorScheme.primary,
-                      fontSize: 9,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 0.55,
+                  Flexible(
+                    child: Text(
+                      item.category.label.toUpperCase(),
+                      overflow: TextOverflow.ellipsis,
+                      style: textTheme.labelMedium?.copyWith(
+                        color: colorScheme.primary,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.35,
+                      ),
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -876,9 +881,8 @@ class _StoryCard extends StatelessWidget {
                           child: Text(
                             item.author,
                             overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
+                            style: textTheme.labelLarge?.copyWith(
                               color: colorScheme.primary,
-                              fontSize: 11,
                               fontWeight: FontWeight.w700,
                             ),
                           ),
@@ -888,11 +892,13 @@ class _StoryCard extends StatelessWidget {
                   ),
                   const SizedBox(width: 5),
                   const Icon(Icons.star_rounded, size: 13, color: Colors.amber),
-                  Text(
-                    ' $rating  •  ${item.favoriteCount}',
-                    style: const TextStyle(
-                      color: Color(0xFF6F7C89),
-                      fontSize: 11,
+                  Flexible(
+                    child: Text(
+                      ' $rating  •  ${item.favoriteCount}',
+                      overflow: TextOverflow.ellipsis,
+                      style: textTheme.bodyMedium?.copyWith(
+                        color: const Color(0xFF8793A0),
+                      ),
                     ),
                   ),
                 ],
@@ -954,6 +960,8 @@ class _SavedStoriesView extends StatelessWidget {
       listenable: savedStories,
       builder: (context, _) {
         final stories = savedStories.stories;
+        final series = savedStories.savedSeries;
+        final standaloneStories = savedStories.standaloneStories;
         if (savedStories.isLoading) {
           return const Center(child: CircularProgressIndicator());
         }
@@ -987,18 +995,117 @@ class _SavedStoriesView extends StatelessWidget {
             ),
           );
         }
-        return ListView.separated(
+        return ListView(
           key: const Key('saved-stories-list'),
           padding: const EdgeInsets.all(10),
-          itemCount: stories.length,
-          separatorBuilder: (_, _) => const SizedBox(height: 6),
-          itemBuilder: (context, index) => _StoryCard(
-            item: stories[index],
-            repository: repository,
-            savedStories: savedStories,
-          ),
+          children: [
+            if (series.isNotEmpty) ...[
+              _SavedSectionHeader(
+                title: 'Series',
+                count: series.length,
+                icon: Icons.collections_bookmark_outlined,
+              ),
+              for (final item in series)
+                _SavedSeriesCard(
+                  series: item,
+                  repository: repository,
+                  savedStories: savedStories,
+                ),
+              const SizedBox(height: 12),
+            ],
+            if (standaloneStories.isNotEmpty) ...[
+              _SavedSectionHeader(
+                title: 'Stories',
+                count: standaloneStories.length,
+                icon: Icons.auto_stories_outlined,
+              ),
+              for (final story in standaloneStories) ...[
+                _StoryCard(
+                  item: story,
+                  repository: repository,
+                  savedStories: savedStories,
+                ),
+                const SizedBox(height: 6),
+              ],
+            ],
+          ],
         );
       },
+    );
+  }
+}
+
+class _SavedSectionHeader extends StatelessWidget {
+  const _SavedSectionHeader({
+    required this.title,
+    required this.count,
+    required this.icon,
+  });
+
+  final String title;
+  final int count;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(4, 10, 4, 8),
+      child: Row(
+        children: [
+          Icon(icon, size: 20, color: Theme.of(context).colorScheme.primary),
+          const SizedBox(width: 8),
+          Text(
+            title,
+            style: Theme.of(
+              context,
+            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(width: 8),
+          Text('$count', style: Theme.of(context).textTheme.bodyMedium),
+        ],
+      ),
+    );
+  }
+}
+
+class _SavedSeriesCard extends StatelessWidget {
+  const _SavedSeriesCard({
+    required this.series,
+    required this.repository,
+    required this.savedStories,
+  });
+
+  final AuthorSeries series;
+  final StoryRepository repository;
+  final SavedStoriesViewModel savedStories;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: ExpansionTile(
+        key: Key('saved-series-${series.id}'),
+        leading: const Icon(Icons.library_books_outlined),
+        title: Text(
+          series.title,
+          style: const TextStyle(fontWeight: FontWeight.w700),
+        ),
+        subtitle: Text(
+          '${series.stories.length} ${series.stories.length == 1 ? 'story' : 'stories'} saved',
+        ),
+        childrenPadding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+        children: [
+          for (final story in series.stories)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: _StoryCard(
+                item: story,
+                repository: repository,
+                savedStories: savedStories,
+              ),
+            ),
+        ],
+      ),
     );
   }
 }

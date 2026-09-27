@@ -312,9 +312,15 @@ class _SeriesStoryTile extends StatelessWidget {
     return ListTile(
       key: Key('author-story-${story.id}'),
       dense: true,
-      leading: CircleAvatar(
-        radius: 14,
-        child: Text('${index + 1}', style: const TextStyle(fontSize: 11)),
+      leading: SizedBox(
+        width: 28,
+        child: Text(
+          '${index + 1}.',
+          textAlign: TextAlign.center,
+          style: Theme.of(
+            context,
+          ).textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w700),
+        ),
       ),
       title: Text(story.title, maxLines: 2, overflow: TextOverflow.ellipsis),
       subtitle: Text(story.category.label),
