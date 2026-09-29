@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'literotica_api.dart';
 import 'local_story_store.dart';
+import 'story_card.dart';
 import 'story_reader.dart';
 
 class AuthorWorksViewModel extends ChangeNotifier {
@@ -261,7 +262,6 @@ class _SeriesCard extends StatelessWidget {
             ),
           for (var index = 0; index < series.stories.length; index++)
             _SeriesStoryTile(
-              index: index,
               story: series.stories[index],
               repository: repository,
               savedStories: savedStories,
@@ -296,35 +296,21 @@ class _SeriesCard extends StatelessWidget {
 
 class _SeriesStoryTile extends StatelessWidget {
   const _SeriesStoryTile({
-    required this.index,
     required this.story,
     required this.repository,
     required this.savedStories,
   });
 
-  final int index;
   final ListorItem story;
   final StoryRepository repository;
   final SavedStoriesViewModel savedStories;
 
   @override
   Widget build(BuildContext context) {
-    return ListTile(
+    return StoryCard(
       key: Key('author-story-${story.id}'),
-      dense: true,
-      leading: SizedBox(
-        width: 28,
-        child: Text(
-          '${index + 1}.',
-          textAlign: TextAlign.center,
-          style: Theme.of(
-            context,
-          ).textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w700),
-        ),
-      ),
-      title: Text(story.title, maxLines: 2, overflow: TextOverflow.ellipsis),
-      subtitle: Text(story.category.label),
-      trailing: const Icon(Icons.chevron_right_rounded),
+      story: story,
+      savedStories: savedStories,
       onTap: () => _openStory(context, story, repository, savedStories),
     );
   }
@@ -343,23 +329,11 @@ class _AuthorStoryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      child: ListTile(
-        key: Key('author-story-${story.id}'),
-        title: Text(
-          story.title,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(fontWeight: FontWeight.w700),
-        ),
-        subtitle: Text(
-          story.description.isEmpty ? story.category.label : story.description,
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-        ),
-        trailing: const Icon(Icons.chevron_right_rounded),
-        onTap: () => _openStory(context, story, repository, savedStories),
-      ),
+    return StoryCard(
+      key: Key('author-story-${story.id}'),
+      story: story,
+      savedStories: savedStories,
+      onTap: () => _openStory(context, story, repository, savedStories),
     );
   }
 }

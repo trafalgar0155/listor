@@ -226,11 +226,13 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const Key('author-works-page')), findsOneWidget);
-    expect(find.text('Test Author'), findsOneWidget);
+    expect(find.text('Test Author'), findsWidgets);
     expect(find.text('Series'), findsOneWidget);
     expect(find.text('Stories'), findsOneWidget);
     expect(find.text('Harbour Lights'), findsOneWidget);
     expect(find.text('A Standalone Work'), findsOneWidget);
+    expect(find.text('NON EROTIC'), findsOneWidget);
+    expect(find.text(' 4.4  •  6'), findsOneWidget);
     expect(find.text('Harbour Lights Ch. 01'), findsNothing);
 
     await tester.tap(find.byKey(const Key('author-series-900')));
@@ -286,6 +288,42 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Harbour Lights Ch. 01'), findsOneWidget);
     expect(find.text('Harbour Lights Ch. 02'), findsOneWidget);
+  });
+
+  testWidgets('saves standalone and series stories from an author page', (
+    tester,
+  ) async {
+    final storyDownload = Completer<StoryDocument>();
+    repository.storyResponse = storyDownload;
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('author-35000')));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('author-series-900')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('save-story-901')));
+    await tester.pump();
+    expect(find.text('Added to download queue'), findsOneWidget);
+
+    final standaloneSave = find.byKey(const Key('save-story-903'));
+    final authorWorksScrollable = find.descendant(
+      of: find.byKey(const Key('author-works-list')),
+      matching: find.byType(Scrollable),
+    );
+    await tester.scrollUntilVisible(
+      standaloneSave,
+      200,
+      scrollable: authorWorksScrollable,
+    );
+    await tester.tap(standaloneSave);
+    await tester.pump();
+
+    expect(
+      savedStoriesRepository.downloads.map((download) => download.story.id),
+      containsAll([901, 903]),
+    );
   });
 
   testWidgets('lays out without errors at phone width', (tester) async {
