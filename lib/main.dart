@@ -4,6 +4,7 @@ import 'favorites.dart';
 import 'listor_home.dart';
 import 'literotica_api.dart';
 import 'local_story_store.dart';
+import 'reading_history.dart';
 
 void main() {
   runApp(const ListorApp());
@@ -15,11 +16,13 @@ class ListorApp extends StatelessWidget {
     this.repository,
     this.savedStoriesRepository,
     this.favoritesRepository,
+    this.historyRepository,
   });
 
   final StoryRepository? repository;
   final SavedStoriesRepository? savedStoriesRepository;
   final FavoritesRepository? favoritesRepository;
+  final ReadingHistoryRepository? historyRepository;
 
   static const _blue = Color(0xFF2693FF);
   static const _background = Color(0xFF05070A);
@@ -71,6 +74,7 @@ class ListorApp extends StatelessWidget {
         repository: repository,
         savedStoriesRepository: savedStoriesRepository,
         favoritesRepository: favoritesRepository,
+        historyRepository: historyRepository,
       ),
     );
   }

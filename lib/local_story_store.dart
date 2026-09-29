@@ -55,7 +55,7 @@ class StoryDatabaseService {
     : _databaseFactory = databaseFactory ?? databaseFactorySqflitePlugin;
 
   static const _databaseName = 'listor.db';
-  static const _databaseVersion = 5;
+  static const _databaseVersion = 6;
   static const savedStoriesTable = 'saved_stories';
   static const storyPagesTable = 'story_pages';
   static const downloadsTable = 'downloads';
@@ -63,6 +63,7 @@ class StoryDatabaseService {
   static const favoriteSeriesTable = 'favorite_series';
   static const favoriteSeriesStoriesTable = 'favorite_series_stories';
   static const favoriteAuthorsTable = 'favorite_authors';
+  static const readingHistoryTable = 'reading_history';
 
   final DatabaseFactory _databaseFactory;
   final String? databasePath;
@@ -86,6 +87,7 @@ class StoryDatabaseService {
           await _createStoryPagesTable(database);
           await _createDownloadsTable(database);
           await _createFavoritesTables(database);
+          await _createReadingHistoryTable(database);
         },
         onUpgrade: (database, oldVersion, newVersion) async {
           if (oldVersion < 2) await _createStoryPagesTable(database);
@@ -97,6 +99,7 @@ class StoryDatabaseService {
             );
           }
           if (oldVersion < 5) await _createFavoritesTables(database);
+          if (oldVersion < 6) await _createReadingHistoryTable(database);
         },
       ),
     );
@@ -208,6 +211,28 @@ class StoryDatabaseService {
       CREATE TABLE $favoriteAuthorsTable (
         author TEXT PRIMARY KEY,
         favorited_at INTEGER NOT NULL
+      )
+    ''');
+  }
+
+  static Future<void> _createReadingHistoryTable(Database database) {
+    return database.execute('''
+      CREATE TABLE $readingHistoryTable (
+        id INTEGER PRIMARY KEY,
+        title TEXT NOT NULL,
+        description TEXT NOT NULL,
+        category_id INTEGER NOT NULL,
+        author TEXT NOT NULL,
+        approved_at INTEGER,
+        favorite_count INTEGER NOT NULL,
+        rating REAL,
+        url TEXT NOT NULL,
+        series_id INTEGER,
+        series_title TEXT,
+        series_position INTEGER,
+        page_index INTEGER NOT NULL,
+        page_count INTEGER NOT NULL,
+        last_read_at INTEGER NOT NULL
       )
     ''');
   }

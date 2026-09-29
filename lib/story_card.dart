@@ -13,6 +13,7 @@ class StoryCard extends StatelessWidget {
     required this.onTap,
     this.onAuthorTap,
     this.showDownloadAction = false,
+    this.footer,
   });
 
   final ListorItem story;
@@ -21,6 +22,7 @@ class StoryCard extends StatelessWidget {
   final VoidCallback onTap;
   final VoidCallback? onAuthorTap;
   final bool showDownloadAction;
+  final Widget? footer;
 
   @override
   Widget build(BuildContext context) {
@@ -181,6 +183,7 @@ class StoryCard extends StatelessWidget {
                   ),
                 ],
               ),
+              if (footer != null) ...[const SizedBox(height: 6), footer!],
             ],
           ),
         ),

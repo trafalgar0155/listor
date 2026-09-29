@@ -7,6 +7,8 @@ import 'author_works.dart';
 import 'favorites.dart';
 import 'literotica_api.dart';
 import 'local_story_store.dart';
+import 'reading_history.dart';
+import 'reading_history_view.dart';
 import 'story_card.dart';
 import 'story_reader.dart';
 import 'story_search.dart';
@@ -17,11 +19,13 @@ class ListorHomePage extends StatefulWidget {
     this.repository,
     this.savedStoriesRepository,
     this.favoritesRepository,
+    this.historyRepository,
   });
 
   final StoryRepository? repository;
   final SavedStoriesRepository? savedStoriesRepository;
   final FavoritesRepository? favoritesRepository;
+  final ReadingHistoryRepository? historyRepository;
 
   @override
   State<ListorHomePage> createState() => _ListorHomePageState();
@@ -33,6 +37,7 @@ class _ListorHomePageState extends State<ListorHomePage> {
   late final StoryRepository _repository;
   late final SavedStoriesViewModel _savedStories;
   late final FavoritesViewModel _favorites;
+  late final ReadingHistoryViewModel _history;
   StoryFilters _filters = const StoryFilters();
   int _destinationIndex = 0;
   bool _showNavigation = true;
@@ -48,14 +53,19 @@ class _ListorHomePageState extends State<ListorHomePage> {
     final favoritesRepository =
         widget.favoritesRepository ??
         SqliteFavoritesRepository(database: database);
+    final historyRepository =
+        widget.historyRepository ??
+        SqliteReadingHistoryRepository(database: database);
     _repository = OfflineFirstStoryRepository(
       remoteRepository,
       localRepository,
     );
     _savedStories = SavedStoriesViewModel(localRepository, _repository);
     _favorites = FavoritesViewModel(favoritesRepository);
+    _history = ReadingHistoryViewModel(historyRepository);
     unawaited(_savedStories.load());
     unawaited(_favorites.load());
+    unawaited(_history.load());
     unawaited(_restoreCategory());
   }
 
@@ -63,6 +73,7 @@ class _ListorHomePageState extends State<ListorHomePage> {
   void dispose() {
     _savedStories.dispose();
     _favorites.dispose();
+    _history.dispose();
     super.dispose();
   }
 
@@ -130,18 +141,28 @@ class _ListorHomePageState extends State<ListorHomePage> {
               repository: _repository,
               savedStories: _savedStories,
               favorites: _favorites,
+              history: _history,
               onScroll: _handleScroll,
             ),
             _SearchDestination(
               repository: _repository,
               savedStories: _savedStories,
               favorites: _favorites,
+              history: _history,
+              onScroll: _handleScroll,
+            ),
+            ReadingHistoryDestination(
+              repository: _repository,
+              savedStories: _savedStories,
+              favorites: _favorites,
+              history: _history,
               onScroll: _handleScroll,
             ),
             _FavoritesDestination(
               repository: _repository,
               savedStories: _savedStories,
               favorites: _favorites,
+              history: _history,
               onScroll: _handleScroll,
             ),
           ],
@@ -193,6 +214,12 @@ class _ListorHomePageState extends State<ListorHomePage> {
                 label: 'Search',
               ),
               NavigationDestination(
+                key: Key('history-destination'),
+                icon: Icon(Icons.history_rounded),
+                selectedIcon: Icon(Icons.history_toggle_off_rounded),
+                label: 'History',
+              ),
+              NavigationDestination(
                 key: Key('favorites-destination'),
                 icon: Icon(Icons.favorite_border_rounded),
                 selectedIcon: Icon(Icons.favorite_rounded),
@@ -217,6 +244,7 @@ class _ExploreView extends StatelessWidget {
     required this.repository,
     required this.savedStories,
     required this.favorites,
+    required this.history,
     required this.onScroll,
   });
 
@@ -224,6 +252,7 @@ class _ExploreView extends StatelessWidget {
   final StoryRepository repository;
   final SavedStoriesViewModel savedStories;
   final FavoritesViewModel favorites;
+  final ReadingHistoryViewModel history;
   final NotificationListenerCallback<ScrollNotification> onScroll;
 
   @override
@@ -262,6 +291,7 @@ class _ExploreView extends StatelessWidget {
                 repository: repository,
                 savedStories: savedStories,
                 favorites: favorites,
+                history: history,
               ),
           ],
         ),
@@ -275,12 +305,14 @@ class _SearchDestination extends StatefulWidget {
     required this.repository,
     required this.savedStories,
     required this.favorites,
+    required this.history,
     required this.onScroll,
   });
 
   final StoryRepository repository;
   final SavedStoriesViewModel savedStories;
   final FavoritesViewModel favorites;
+  final ReadingHistoryViewModel history;
   final NotificationListenerCallback<ScrollNotification> onScroll;
 
   @override
@@ -418,6 +450,7 @@ class _SearchDestinationState extends State<_SearchDestination> {
                   repository: widget.repository,
                   savedStories: widget.savedStories,
                   favorites: widget.favorites,
+                  history: widget.history,
                 ),
               ),
             ],
@@ -434,12 +467,14 @@ class _SearchResults extends StatelessWidget {
     required this.repository,
     required this.savedStories,
     required this.favorites,
+    required this.history,
   });
 
   final StorySearchViewModel viewModel;
   final StoryRepository repository;
   final SavedStoriesViewModel savedStories;
   final FavoritesViewModel favorites;
+  final ReadingHistoryViewModel history;
 
   @override
   Widget build(BuildContext context) {
@@ -493,6 +528,7 @@ class _SearchResults extends StatelessWidget {
             repository: repository,
             savedStories: savedStories,
             favorites: favorites,
+            history: history,
           );
         },
       ),
@@ -575,12 +611,14 @@ class _FavoritesDestination extends StatelessWidget {
     required this.repository,
     required this.savedStories,
     required this.favorites,
+    required this.history,
     required this.onScroll,
   });
 
   final StoryRepository repository;
   final SavedStoriesViewModel savedStories;
   final FavoritesViewModel favorites;
+  final ReadingHistoryViewModel history;
   final NotificationListenerCallback<ScrollNotification> onScroll;
 
   @override
@@ -621,6 +659,7 @@ class _FavoritesDestination extends StatelessWidget {
                               repository: repository,
                               savedStories: savedStories,
                               favorites: favorites,
+                              history: history,
                             ),
                           ),
                         );
@@ -668,18 +707,21 @@ class _FavoritesDestination extends StatelessWidget {
                     repository: repository,
                     savedStories: savedStories,
                     favorites: favorites,
+                    history: history,
                   ),
                   _FavoriteSeriesView(
                     series: favorites.series,
                     repository: repository,
                     savedStories: savedStories,
                     favorites: favorites,
+                    history: history,
                   ),
                   _FavoriteAuthorsView(
                     authors: favorites.authors,
                     repository: repository,
                     savedStories: savedStories,
                     favorites: favorites,
+                    history: history,
                   ),
                 ],
               );
@@ -697,12 +739,14 @@ class _FavoriteStoriesView extends StatelessWidget {
     required this.repository,
     required this.savedStories,
     required this.favorites,
+    required this.history,
   });
 
   final List<ListorItem> stories;
   final StoryRepository repository;
   final SavedStoriesViewModel savedStories;
   final FavoritesViewModel favorites;
+  final ReadingHistoryViewModel history;
 
   @override
   Widget build(BuildContext context) {
@@ -722,6 +766,7 @@ class _FavoriteStoriesView extends StatelessWidget {
         repository: repository,
         savedStories: savedStories,
         favorites: favorites,
+        history: history,
         showDownloadAction: true,
       ),
     );
@@ -734,12 +779,14 @@ class _FavoriteSeriesView extends StatelessWidget {
     required this.repository,
     required this.savedStories,
     required this.favorites,
+    required this.history,
   });
 
   final List<AuthorSeries> series;
   final StoryRepository repository;
   final SavedStoriesViewModel savedStories;
   final FavoritesViewModel favorites;
+  final ReadingHistoryViewModel history;
 
   @override
   Widget build(BuildContext context) {
@@ -759,6 +806,7 @@ class _FavoriteSeriesView extends StatelessWidget {
         repository: repository,
         savedStories: savedStories,
         favorites: favorites,
+        history: history,
       ),
     );
   }
@@ -770,12 +818,14 @@ class _FavoriteAuthorsView extends StatelessWidget {
     required this.repository,
     required this.savedStories,
     required this.favorites,
+    required this.history,
   });
 
   final List<String> authors;
   final StoryRepository repository;
   final SavedStoriesViewModel savedStories;
   final FavoritesViewModel favorites;
+  final ReadingHistoryViewModel history;
 
   @override
   Widget build(BuildContext context) {
@@ -813,6 +863,7 @@ class _FavoriteAuthorsView extends StatelessWidget {
                     repository: repository,
                     savedStories: savedStories,
                     favorites: favorites,
+                    history: history,
                   ),
                 ),
               );
@@ -1113,6 +1164,7 @@ class _FeedPage extends StatefulWidget {
     required this.repository,
     required this.savedStories,
     required this.favorites,
+    required this.history,
   });
 
   final FeedType feed;
@@ -1120,6 +1172,7 @@ class _FeedPage extends StatefulWidget {
   final StoryRepository repository;
   final SavedStoriesViewModel savedStories;
   final FavoritesViewModel favorites;
+  final ReadingHistoryViewModel history;
 
   @override
   State<_FeedPage> createState() => _FeedPageState();
@@ -1236,6 +1289,7 @@ class _FeedPageState extends State<_FeedPage> {
               repository: widget.repository,
               savedStories: widget.savedStories,
               favorites: widget.favorites,
+              history: widget.history,
             );
           },
         ),
@@ -1285,6 +1339,7 @@ class _StoryCard extends StatelessWidget {
     required this.repository,
     required this.savedStories,
     required this.favorites,
+    required this.history,
     this.showDownloadAction = false,
   });
 
@@ -1292,6 +1347,7 @@ class _StoryCard extends StatelessWidget {
   final StoryRepository repository;
   final SavedStoriesViewModel savedStories;
   final FavoritesViewModel favorites;
+  final ReadingHistoryViewModel history;
   final bool showDownloadAction;
 
   @override
@@ -1308,6 +1364,7 @@ class _StoryCard extends StatelessWidget {
               story: item,
               repository: repository,
               favorites: favorites,
+              history: history,
               onAuthorTap: () => _openAuthor(context),
             ),
           ),
@@ -1325,6 +1382,7 @@ class _StoryCard extends StatelessWidget {
           repository: repository,
           savedStories: savedStories,
           favorites: favorites,
+          history: history,
         ),
       ),
     );
@@ -1337,12 +1395,14 @@ class _FavoriteSeriesCard extends StatelessWidget {
     required this.repository,
     required this.savedStories,
     required this.favorites,
+    required this.history,
   });
 
   final AuthorSeries series;
   final StoryRepository repository;
   final SavedStoriesViewModel savedStories;
   final FavoritesViewModel favorites;
+  final ReadingHistoryViewModel history;
 
   @override
   Widget build(BuildContext context) {
@@ -1402,6 +1462,7 @@ class _FavoriteSeriesCard extends StatelessWidget {
                 repository: repository,
                 savedStories: savedStories,
                 favorites: favorites,
+                history: history,
                 showDownloadAction: true,
               ),
             ),
@@ -1416,11 +1477,13 @@ class _SavedStoriesView extends StatelessWidget {
     required this.repository,
     required this.savedStories,
     required this.favorites,
+    required this.history,
   });
 
   final StoryRepository repository;
   final SavedStoriesViewModel savedStories;
   final FavoritesViewModel favorites;
+  final ReadingHistoryViewModel history;
 
   @override
   Widget build(BuildContext context) {
@@ -1479,6 +1542,7 @@ class _SavedStoriesView extends StatelessWidget {
                   repository: repository,
                   savedStories: savedStories,
                   favorites: favorites,
+                  history: history,
                 ),
               const SizedBox(height: 12),
             ],
@@ -1494,6 +1558,7 @@ class _SavedStoriesView extends StatelessWidget {
                   repository: repository,
                   savedStories: savedStories,
                   favorites: favorites,
+                  history: history,
                   showDownloadAction: true,
                 ),
                 const SizedBox(height: 6),
@@ -1545,12 +1610,14 @@ class _SavedSeriesCard extends StatelessWidget {
     required this.repository,
     required this.savedStories,
     required this.favorites,
+    required this.history,
   });
 
   final AuthorSeries series;
   final StoryRepository repository;
   final SavedStoriesViewModel savedStories;
   final FavoritesViewModel favorites;
+  final ReadingHistoryViewModel history;
 
   @override
   Widget build(BuildContext context) {
@@ -1576,6 +1643,7 @@ class _SavedSeriesCard extends StatelessWidget {
                 repository: repository,
                 savedStories: savedStories,
                 favorites: favorites,
+                history: history,
                 showDownloadAction: true,
               ),
             ),
@@ -1590,11 +1658,13 @@ class _DownloadsPage extends StatelessWidget {
     required this.repository,
     required this.savedStories,
     required this.favorites,
+    required this.history,
   });
 
   final StoryRepository repository;
   final SavedStoriesViewModel savedStories;
   final FavoritesViewModel favorites;
+  final ReadingHistoryViewModel history;
 
   @override
   Widget build(BuildContext context) {
@@ -1616,6 +1686,7 @@ class _DownloadsPage extends StatelessWidget {
               repository: repository,
               savedStories: savedStories,
               favorites: favorites,
+              history: history,
             ),
             _DownloadQueueView(savedStories: savedStories),
           ],

@@ -7,24 +7,28 @@ import 'package:listor/favorites.dart';
 import 'package:listor/literotica_api.dart';
 import 'package:listor/local_story_store.dart';
 import 'package:listor/main.dart';
+import 'package:listor/reading_history.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   late _FakeStoryRepository repository;
   late _FakeSavedStoriesRepository savedStoriesRepository;
   late _FakeFavoritesRepository favoritesRepository;
+  late _FakeReadingHistoryRepository historyRepository;
 
   setUp(() {
     SharedPreferences.setMockInitialValues({});
     repository = _FakeStoryRepository();
     savedStoriesRepository = _FakeSavedStoriesRepository();
     favoritesRepository = _FakeFavoritesRepository();
+    historyRepository = _FakeReadingHistoryRepository();
   });
 
   ListorApp buildApp() => ListorApp(
     repository: repository,
     savedStoriesRepository: savedStoriesRepository,
     favoritesRepository: favoritesRepository,
+    historyRepository: historyRepository,
   );
 
   testWidgets('shows a filter action and all feed tabs', (tester) async {
@@ -46,6 +50,7 @@ void main() {
     );
     expect(find.byKey(const Key('explore-destination')), findsOneWidget);
     expect(find.byKey(const Key('search-destination')), findsOneWidget);
+    expect(find.byKey(const Key('history-destination')), findsOneWidget);
     expect(find.byKey(const Key('favorites-destination')), findsOneWidget);
   });
 
@@ -262,6 +267,71 @@ void main() {
     await tester.tap(find.byKey(const Key('story-author-link')));
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('author-works-page')), findsOneWidget);
+  });
+
+  testWidgets('resumes a story at its saved page and manages history', (
+    tester,
+  ) async {
+    final document = StoryDocument(
+      pages: [
+        List.filled(24, '<p>Long first page content.</p>').join(),
+        '<p>Saved second page.</p>',
+      ],
+    );
+    repository.storyResponse = Completer<StoryDocument>()..complete(document);
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('A Quiet Harbour'));
+    await tester.pumpAndSettle();
+
+    final readerScrollable = find.descendant(
+      of: find.byKey(const Key('story-reader')),
+      matching: find.byType(Scrollable),
+    );
+    final position = tester.state<ScrollableState>(readerScrollable).position;
+    expect(position.pixels, 0);
+    expect(find.byKey(const Key('story-page-1')), findsOneWidget);
+    await tester.drag(
+      find.byKey(const Key('story-reader')),
+      Offset(0, -position.maxScrollExtent),
+    );
+    await tester.pumpAndSettle();
+    expect(historyRepository.entries.single.pageIndex, 1);
+
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('A Quiet Harbour'));
+    await tester.pumpAndSettle();
+    final resumedScrollable = find.descendant(
+      of: find.byKey(const Key('story-reader')),
+      matching: find.byType(Scrollable),
+    );
+    expect(
+      tester.state<ScrollableState>(resumedScrollable).position.pixels,
+      greaterThan(0),
+    );
+
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('history-destination')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('history-list')), findsOneWidget);
+    expect(find.textContaining('Page 2 of 2'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('remove-history-35000')));
+    await tester.pump();
+    expect(historyRepository.entries, isEmpty);
+    tester.widget<SnackBarAction>(find.byType(SnackBarAction)).onPressed();
+    await tester.pumpAndSettle();
+    expect(historyRepository.entries.single.story.id, 35000);
+
+    await tester.tap(find.byKey(const Key('clear-history')));
+    await tester.pumpAndSettle();
+    expect(find.text('Clear reading history?'), findsOneWidget);
+    await tester.tap(find.widgetWithText(FilledButton, 'Clear'));
+    await tester.pumpAndSettle();
+    expect(find.text('No reading history yet'), findsOneWidget);
   });
 
   testWidgets('opens an author’s series and standalone stories', (
@@ -706,6 +776,28 @@ class _FakeFavoritesRepository implements FavoritesRepository {
   Future<void> saveStory(ListorItem story) async {
     stories.removeWhere((item) => item.id == story.id);
     stories.insert(0, story);
+  }
+}
+
+class _FakeReadingHistoryRepository implements ReadingHistoryRepository {
+  final entries = <ReadingHistoryEntry>[];
+
+  @override
+  Future<void> clear() async => entries.clear();
+
+  @override
+  Future<List<ReadingHistoryEntry>> readAll() async => List.of(entries);
+
+  @override
+  Future<void> remove(int storyId) async {
+    entries.removeWhere((entry) => entry.story.id == storyId);
+  }
+
+  @override
+  Future<void> save(ReadingHistoryEntry entry) async {
+    entries.removeWhere((item) => item.story.id == entry.story.id);
+    entries.add(entry);
+    entries.sort((a, b) => b.lastReadAt.compareTo(a.lastReadAt));
   }
 }
 

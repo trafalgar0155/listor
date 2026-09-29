@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:listor/favorites.dart';
 import 'package:listor/literotica_api.dart';
 import 'package:listor/local_story_store.dart';
+import 'package:listor/reading_history.dart';
 import 'package:path/path.dart' as p;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
@@ -16,6 +17,7 @@ void main() {
     late StoryDatabaseService database;
     late SqliteSavedStoriesRepository repository;
     late SqliteFavoritesRepository favoritesRepository;
+    late SqliteReadingHistoryRepository historyRepository;
 
     setUp(() async {
       temporaryDirectory = await Directory.systemTemp.createTemp(
@@ -28,6 +30,7 @@ void main() {
       );
       repository = SqliteSavedStoriesRepository(database: database);
       favoritesRepository = SqliteFavoritesRepository(database: database);
+      historyRepository = SqliteReadingHistoryRepository(database: database);
     });
 
     tearDown(() async {
@@ -180,6 +183,72 @@ void main() {
       expect(await favoritesRepository.readStories(), isEmpty);
       expect(await favoritesRepository.readSeries(), isEmpty);
       expect(await favoritesRepository.readAuthors(), isEmpty);
+    });
+
+    test('persists and updates reading history without duplicates', () async {
+      await historyRepository.save(
+        ReadingHistoryEntry(
+          story: _story,
+          pageIndex: 0,
+          pageCount: 3,
+          lastReadAt: DateTime(2026, 9, 28, 8),
+        ),
+      );
+      await historyRepository.save(
+        ReadingHistoryEntry(
+          story: _story,
+          pageIndex: 2,
+          pageCount: 3,
+          lastReadAt: DateTime(2026, 9, 29, 9),
+        ),
+      );
+      await database.close();
+
+      database = StoryDatabaseService(
+        databaseFactory: databaseFactoryFfi,
+        databasePath: databasePath,
+      );
+      historyRepository = SqliteReadingHistoryRepository(database: database);
+      final restored = await historyRepository.readAll();
+
+      expect(restored, hasLength(1));
+      expect(restored.single.story.id, _story.id);
+      expect(restored.single.pageIndex, 2);
+      expect(restored.single.pageCount, 3);
+
+      await historyRepository.remove(_story.id);
+      expect(await historyRepository.readAll(), isEmpty);
+    });
+
+    test('migrates version 5 data without losing saved content', () async {
+      await repository.save(_story, _document);
+      await favoritesRepository.saveAuthor(_story.author);
+      final rawDatabase = await database.database;
+      await rawDatabase.execute(
+        'DROP TABLE ${StoryDatabaseService.readingHistoryTable}',
+      );
+      await rawDatabase.execute('PRAGMA user_version = 5');
+      await database.close();
+
+      database = StoryDatabaseService(
+        databaseFactory: databaseFactoryFfi,
+        databasePath: databasePath,
+      );
+      repository = SqliteSavedStoriesRepository(database: database);
+      favoritesRepository = SqliteFavoritesRepository(database: database);
+      historyRepository = SqliteReadingHistoryRepository(database: database);
+
+      expect((await repository.readAll()).single.id, _story.id);
+      expect(await favoritesRepository.readAuthors(), [_story.author]);
+      await historyRepository.save(
+        ReadingHistoryEntry(
+          story: _story,
+          pageIndex: 1,
+          pageCount: 2,
+          lastReadAt: DateTime(2026, 9, 29),
+        ),
+      );
+      expect((await historyRepository.readAll()).single.pageIndex, 1);
     });
 
     test('migrates version 3 data and adds series metadata columns', () async {

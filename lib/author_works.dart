@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'favorites.dart';
 import 'literotica_api.dart';
 import 'local_story_store.dart';
+import 'reading_history.dart';
 import 'story_card.dart';
 import 'story_reader.dart';
 
@@ -42,12 +43,14 @@ class AuthorWorksPage extends StatefulWidget {
     required this.repository,
     required this.savedStories,
     required this.favorites,
+    required this.history,
   });
 
   final String author;
   final StoryRepository repository;
   final SavedStoriesViewModel savedStories;
   final FavoritesViewModel favorites;
+  final ReadingHistoryViewModel history;
 
   @override
   State<AuthorWorksPage> createState() => _AuthorWorksPageState();
@@ -121,6 +124,7 @@ class _AuthorWorksPageState extends State<AuthorWorksPage> {
             repository: widget.repository,
             savedStories: widget.savedStories,
             favorites: widget.favorites,
+            history: widget.history,
           );
         },
       ),
@@ -134,12 +138,14 @@ class _AuthorWorksList extends StatelessWidget {
     required this.repository,
     required this.savedStories,
     required this.favorites,
+    required this.history,
   });
 
   final AuthorWorks works;
   final StoryRepository repository;
   final SavedStoriesViewModel savedStories;
   final FavoritesViewModel favorites;
+  final ReadingHistoryViewModel history;
 
   @override
   Widget build(BuildContext context) {
@@ -159,6 +165,7 @@ class _AuthorWorksList extends StatelessWidget {
               repository: repository,
               savedStories: savedStories,
               favorites: favorites,
+              history: history,
             ),
             if (index < works.series.length - 1) const SizedBox(height: 6),
           ],
@@ -176,6 +183,7 @@ class _AuthorWorksList extends StatelessWidget {
               repository: repository,
               savedStories: savedStories,
               favorites: favorites,
+              history: history,
             ),
             if (index < works.stories.length - 1) const SizedBox(height: 6),
           ],
@@ -224,12 +232,14 @@ class _SeriesCard extends StatelessWidget {
     required this.repository,
     required this.savedStories,
     required this.favorites,
+    required this.history,
   });
 
   final AuthorSeries series;
   final StoryRepository repository;
   final SavedStoriesViewModel savedStories;
   final FavoritesViewModel favorites;
+  final ReadingHistoryViewModel history;
 
   @override
   Widget build(BuildContext context) {
@@ -323,6 +333,7 @@ class _SeriesCard extends StatelessWidget {
               repository: repository,
               savedStories: savedStories,
               favorites: favorites,
+              history: history,
             ),
             if (index < series.stories.length - 1) const SizedBox(height: 6),
           ],
@@ -360,12 +371,14 @@ class _SeriesStoryTile extends StatelessWidget {
     required this.repository,
     required this.savedStories,
     required this.favorites,
+    required this.history,
   });
 
   final ListorItem story;
   final StoryRepository repository;
   final SavedStoriesViewModel savedStories;
   final FavoritesViewModel favorites;
+  final ReadingHistoryViewModel history;
 
   @override
   Widget build(BuildContext context) {
@@ -374,8 +387,14 @@ class _SeriesStoryTile extends StatelessWidget {
       story: story,
       favorites: favorites,
       savedStories: savedStories,
-      onTap: () =>
-          _openStory(context, story, repository, savedStories, favorites),
+      onTap: () => _openStory(
+        context,
+        story,
+        repository,
+        savedStories,
+        favorites,
+        history,
+      ),
     );
   }
 }
@@ -386,12 +405,14 @@ class _AuthorStoryCard extends StatelessWidget {
     required this.repository,
     required this.savedStories,
     required this.favorites,
+    required this.history,
   });
 
   final ListorItem story;
   final StoryRepository repository;
   final SavedStoriesViewModel savedStories;
   final FavoritesViewModel favorites;
+  final ReadingHistoryViewModel history;
 
   @override
   Widget build(BuildContext context) {
@@ -400,8 +421,14 @@ class _AuthorStoryCard extends StatelessWidget {
       story: story,
       favorites: favorites,
       savedStories: savedStories,
-      onTap: () =>
-          _openStory(context, story, repository, savedStories, favorites),
+      onTap: () => _openStory(
+        context,
+        story,
+        repository,
+        savedStories,
+        favorites,
+        history,
+      ),
     );
   }
 }
@@ -412,6 +439,7 @@ void _openStory(
   StoryRepository repository,
   SavedStoriesViewModel savedStories,
   FavoritesViewModel favorites,
+  ReadingHistoryViewModel history,
 ) {
   Navigator.of(context).push(
     MaterialPageRoute<void>(
@@ -419,6 +447,7 @@ void _openStory(
         story: story,
         repository: repository,
         favorites: favorites,
+        history: history,
         onAuthorTap: () {
           Navigator.of(context).push(
             MaterialPageRoute<void>(
@@ -427,6 +456,7 @@ void _openStory(
                 repository: repository,
                 savedStories: savedStories,
                 favorites: favorites,
+                history: history,
               ),
             ),
           );
