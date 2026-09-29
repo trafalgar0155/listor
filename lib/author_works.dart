@@ -153,13 +153,15 @@ class _AuthorWorksList extends StatelessWidget {
             count: works.series.length,
             icon: Icons.collections_bookmark_outlined,
           ),
-          for (final series in works.series)
+          for (var index = 0; index < works.series.length; index++) ...[
             _SeriesCard(
-              series: series,
+              series: works.series[index],
               repository: repository,
               savedStories: savedStories,
               favorites: favorites,
             ),
+            if (index < works.series.length - 1) const SizedBox(height: 6),
+          ],
           const SizedBox(height: 14),
         ],
         if (works.stories.isNotEmpty) ...[
@@ -168,13 +170,15 @@ class _AuthorWorksList extends StatelessWidget {
             count: works.stories.length,
             icon: Icons.auto_stories_outlined,
           ),
-          for (final story in works.stories)
+          for (var index = 0; index < works.stories.length; index++) ...[
             _AuthorStoryCard(
-              story: story,
+              story: works.stories[index],
               repository: repository,
               savedStories: savedStories,
               favorites: favorites,
             ),
+            if (index < works.stories.length - 1) const SizedBox(height: 6),
+          ],
         ],
       ],
     );
@@ -313,13 +317,15 @@ class _SeriesCard extends StatelessWidget {
                 ),
               ),
             ),
-          for (var index = 0; index < series.stories.length; index++)
+          for (var index = 0; index < series.stories.length; index++) ...[
             _SeriesStoryTile(
               story: series.stories[index],
               repository: repository,
               savedStories: savedStories,
               favorites: favorites,
             ),
+            if (index < series.stories.length - 1) const SizedBox(height: 6),
+          ],
         ],
       ),
     );
@@ -412,6 +418,7 @@ void _openStory(
       builder: (_) => StoryReaderPage(
         story: story,
         repository: repository,
+        favorites: favorites,
         onAuthorTap: () {
           Navigator.of(context).push(
             MaterialPageRoute<void>(

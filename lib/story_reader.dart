@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_html/flutter_html.dart';
 
+import 'favorites.dart';
 import 'literotica_api.dart';
 
 class StoryReaderPage extends StatefulWidget {
@@ -8,11 +9,13 @@ class StoryReaderPage extends StatefulWidget {
     super.key,
     required this.story,
     required this.repository,
+    required this.favorites,
     this.onAuthorTap,
   });
 
   final ListorItem story;
   final StoryRepository repository;
+  final FavoritesViewModel favorites;
   final VoidCallback? onAuthorTap;
 
   @override
@@ -42,6 +45,28 @@ class _StoryReaderPageState extends State<StoryReaderPage> {
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),
+        actions: [
+          ListenableBuilder(
+            listenable: widget.favorites,
+            builder: (context, _) {
+              final isFavorite = widget.favorites.isStoryFavorite(
+                widget.story.id,
+              );
+              return IconButton(
+                key: const Key('story-reader-favorite'),
+                onPressed: _toggleFavorite,
+                tooltip: isFavorite
+                    ? 'Remove from favourites'
+                    : 'Add to favourites',
+                icon: Icon(
+                  isFavorite
+                      ? Icons.favorite_rounded
+                      : Icons.favorite_border_rounded,
+                ),
+              );
+            },
+          ),
+        ],
       ),
       body: FutureBuilder<StoryDocument>(
         future: _document,
@@ -60,6 +85,26 @@ class _StoryReaderPageState extends State<StoryReaderPage> {
         },
       ),
     );
+  }
+
+  Future<void> _toggleFavorite() async {
+    try {
+      final added = await widget.favorites.toggleStory(widget.story);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          duration: const Duration(seconds: 1),
+          content: Text(
+            added ? 'Added to favourites' : 'Removed from favourites',
+          ),
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Couldn’t update favourites')),
+      );
+    }
   }
 }
 

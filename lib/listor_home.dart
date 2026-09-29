@@ -1307,6 +1307,7 @@ class _StoryCard extends StatelessWidget {
             builder: (_) => StoryReaderPage(
               story: item,
               repository: repository,
+              favorites: favorites,
               onAuthorTap: () => _openAuthor(context),
             ),
           ),

@@ -242,6 +242,19 @@ void main() {
       tester.widget<Text>(readerCategory).textSpan?.toPlainText(),
       contains('Non Erotic'),
     );
+    final readerFavorite = find.byKey(const Key('story-reader-favorite'));
+    expect(readerFavorite, findsOneWidget);
+    expect(
+      tester.widget<IconButton>(readerFavorite).tooltip,
+      'Add to favourites',
+    );
+    await tester.tap(readerFavorite);
+    await tester.pump();
+    expect(favoritesRepository.stories.map((story) => story.id), [35000]);
+    expect(
+      tester.widget<IconButton>(readerFavorite).tooltip,
+      'Remove from favourites',
+    );
     final html = tester.widget<Html>(find.byType(Html));
     expect(html.data, contains('<strong>Opening line</strong>'));
     expect(html.data, contains('<em>emphasis</em>'));
@@ -274,6 +287,11 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Harbour Lights Ch. 01'), findsOneWidget);
     expect(find.text('Harbour Lights Ch. 02'), findsOneWidget);
+    expect(
+      tester.getTopLeft(find.byKey(const Key('author-story-902'))).dy -
+          tester.getBottomLeft(find.byKey(const Key('author-story-901'))).dy,
+      6,
+    );
 
     await tester.tap(find.byKey(const Key('author-story-901')));
     await tester.pumpAndSettle();
