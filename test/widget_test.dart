@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_html/flutter_html.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:listor/favorites.dart';
 import 'package:listor/literotica_api.dart';
 import 'package:listor/local_story_store.dart';
 import 'package:listor/main.dart';
@@ -11,16 +12,19 @@ import 'package:shared_preferences/shared_preferences.dart';
 void main() {
   late _FakeStoryRepository repository;
   late _FakeSavedStoriesRepository savedStoriesRepository;
+  late _FakeFavoritesRepository favoritesRepository;
 
   setUp(() {
     SharedPreferences.setMockInitialValues({});
     repository = _FakeStoryRepository();
     savedStoriesRepository = _FakeSavedStoriesRepository();
+    favoritesRepository = _FakeFavoritesRepository();
   });
 
   ListorApp buildApp() => ListorApp(
     repository: repository,
     savedStoriesRepository: savedStoriesRepository,
+    favoritesRepository: favoritesRepository,
   );
 
   testWidgets('shows a filter action and all feed tabs', (tester) async {
@@ -34,7 +38,7 @@ void main() {
     expect(find.text('Random'), findsOneWidget);
     expect(find.byKey(const Key('explore-destination')), findsOneWidget);
     expect(find.byKey(const Key('search-destination')), findsOneWidget);
-    expect(find.byKey(const Key('saved-destination')), findsOneWidget);
+    expect(find.byKey(const Key('favorites-destination')), findsOneWidget);
   });
 
   testWidgets('searches stories and filters by category', (tester) async {
@@ -277,7 +281,9 @@ void main() {
 
     await tester.pageBack();
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('saved-destination')));
+    await tester.tap(find.byKey(const Key('favorites-destination')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('downloads-action')));
     await tester.pumpAndSettle();
 
     expect(find.byKey(const Key('saved-series-900')), findsOneWidget);
@@ -290,24 +296,27 @@ void main() {
     expect(find.text('Harbour Lights Ch. 02'), findsOneWidget);
   });
 
-  testWidgets('saves standalone and series stories from an author page', (
+  testWidgets('favourites stories, series, and author from an author page', (
     tester,
   ) async {
-    final storyDownload = Completer<StoryDocument>();
-    repository.storyResponse = storyDownload;
     await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
 
     await tester.tap(find.byKey(const Key('author-35000')));
     await tester.pumpAndSettle();
 
+    await tester.tap(find.byKey(const Key('favorite-author')));
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('favorite-series-900')));
+    await tester.pump();
+
     await tester.tap(find.byKey(const Key('author-series-900')));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('save-story-901')));
+    await tester.tap(find.byKey(const Key('favorite-story-901')));
     await tester.pump();
-    expect(find.text('Added to download queue'), findsOneWidget);
+    expect(find.text('Added to favourites'), findsOneWidget);
 
-    final standaloneSave = find.byKey(const Key('save-story-903'));
+    final standaloneSave = find.byKey(const Key('favorite-story-903'));
     final authorWorksScrollable = find.descendant(
       of: find.byKey(const Key('author-works-list')),
       matching: find.byType(Scrollable),
@@ -320,9 +329,25 @@ void main() {
     await tester.tap(standaloneSave);
     await tester.pump();
 
+    expect(favoritesRepository.stories.map((story) => story.id), [903, 901]);
+    expect(favoritesRepository.series.single.id, 900);
+    expect(favoritesRepository.authors, ['Test Author']);
+
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('favorites-destination')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('favorite-stories-list')), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(Tab, 'Series'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('favorite-series-900')), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(Tab, 'Author'));
+    await tester.pumpAndSettle();
     expect(
-      savedStoriesRepository.downloads.map((download) => download.story.id),
-      containsAll([901, 903]),
+      find.byKey(const Key('favorite-author-Test Author')),
+      findsOneWidget,
     );
   });
 
@@ -373,7 +398,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('queues a download and moves it to Saved when complete', (
+  testWidgets('downloads a favourite separately for offline reading', (
     tester,
   ) async {
     final storyDownload = Completer<StoryDocument>();
@@ -381,21 +406,26 @@ void main() {
     await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byKey(const Key('save-story-35000')));
+    await tester.tap(find.byKey(const Key('favorite-story-35000')));
+    await tester.pump();
+    expect(favoritesRepository.stories, hasLength(1));
+    expect(savedStoriesRepository.downloads, isEmpty);
+
+    await tester.tap(find.byKey(const Key('favorites-destination')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('download-story-35000')));
     await tester.pump();
     expect(savedStoriesRepository.stories, isEmpty);
     expect(savedStoriesRepository.downloads, hasLength(1));
     expect(find.byTooltip('Downloading story'), findsOneWidget);
 
-    await tester.tap(find.byKey(const Key('saved-destination')));
-    await tester.pump(const Duration(milliseconds: 300));
-    expect(find.text('Saved'), findsWidgets);
-    expect(find.text('No saved stories yet'), findsOneWidget);
-
     await tester.tap(find.byKey(const Key('downloads-action')));
     await tester.pump();
-    await tester.pump(const Duration(seconds: 1));
+    await tester.pump(const Duration(milliseconds: 300));
     expect(find.text('Downloads'), findsOneWidget);
+    await tester.tap(find.widgetWithText(Tab, 'Queue'));
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
     expect(find.byKey(const Key('downloads-list')), findsOneWidget);
     expect(find.text('A Quiet Harbour'), findsOneWidget);
     expect(find.text('Downloading for offline use…'), findsOneWidget);
@@ -411,7 +441,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('No active downloads'), findsOneWidget);
 
-    await tester.pageBack();
+    await tester.tap(find.widgetWithText(Tab, 'Downloaded'));
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('saved-stories-list')), findsOneWidget);
     expect(find.text('A Quiet Harbour'), findsOneWidget);
@@ -575,6 +605,52 @@ class _FakeStoryRepository implements StoryRepository {
             'Second paragraph with <em>emphasis</em>.',
       ],
     );
+  }
+}
+
+class _FakeFavoritesRepository implements FavoritesRepository {
+  final stories = <ListorItem>[];
+  final series = <AuthorSeries>[];
+  final authors = <String>[];
+
+  @override
+  Future<List<String>> readAuthors() async => List.of(authors);
+
+  @override
+  Future<List<AuthorSeries>> readSeries() async => List.of(series);
+
+  @override
+  Future<List<ListorItem>> readStories() async => List.of(stories);
+
+  @override
+  Future<void> removeAuthor(String author) async => authors.remove(author);
+
+  @override
+  Future<void> removeSeries(int seriesId) async {
+    series.removeWhere((item) => item.id == seriesId);
+  }
+
+  @override
+  Future<void> removeStory(int storyId) async {
+    stories.removeWhere((story) => story.id == storyId);
+  }
+
+  @override
+  Future<void> saveAuthor(String author) async {
+    authors.remove(author);
+    authors.insert(0, author);
+  }
+
+  @override
+  Future<void> saveSeries(AuthorSeries value) async {
+    series.removeWhere((item) => item.id == value.id);
+    series.insert(0, value);
+  }
+
+  @override
+  Future<void> saveStory(ListorItem story) async {
+    stories.removeWhere((item) => item.id == story.id);
+    stories.insert(0, story);
   }
 }
 

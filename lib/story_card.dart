@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'favorites.dart';
 import 'literotica_api.dart';
 import 'local_story_store.dart';
 
@@ -7,15 +8,19 @@ class StoryCard extends StatelessWidget {
   const StoryCard({
     super.key,
     required this.story,
+    required this.favorites,
     required this.savedStories,
     required this.onTap,
     this.onAuthorTap,
+    this.showDownloadAction = false,
   });
 
   final ListorItem story;
+  final FavoritesViewModel favorites;
   final SavedStoriesViewModel savedStories;
   final VoidCallback onTap;
   final VoidCallback? onAuthorTap;
+  final bool showDownloadAction;
 
   @override
   Widget build(BuildContext context) {
@@ -47,55 +52,34 @@ class StoryCard extends StatelessWidget {
                     ),
                   ),
                   ListenableBuilder(
-                    listenable: savedStories,
+                    listenable: favorites,
                     builder: (context, _) {
-                      final isSaved = savedStories.isSaved(story.id);
-                      final download = savedStories.downloadFor(story.id);
-                      final isDownloading =
-                          download?.status == StoryDownloadStatus.downloading;
-                      final isQueued =
-                          download?.status == StoryDownloadStatus.queued;
-                      final hasFailed =
-                          download?.status == StoryDownloadStatus.failed;
+                      final isFavorite = favorites.isStoryFavorite(story.id);
                       return IconButton(
-                        key: Key('save-story-${story.id}'),
-                        onPressed: isDownloading || isQueued
-                            ? null
-                            : () => _toggleSaved(context),
-                        tooltip: isDownloading
-                            ? 'Downloading story'
-                            : isQueued
-                            ? 'Queued for download'
-                            : hasFailed
-                            ? 'Retry download'
-                            : isSaved
-                            ? 'Remove from saved'
-                            : 'Save story for offline reading',
+                        key: Key('favorite-story-${story.id}'),
+                        onPressed: () => _toggleFavorite(context),
+                        tooltip: isFavorite
+                            ? 'Remove from favourites'
+                            : 'Add to favourites',
                         visualDensity: VisualDensity.compact,
                         constraints: const BoxConstraints.tightFor(
                           width: 32,
                           height: 28,
                         ),
-                        icon: isDownloading
-                            ? const SizedBox.square(
-                                dimension: 16,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : isQueued
-                            ? const Icon(Icons.schedule_rounded, size: 18)
-                            : hasFailed
-                            ? const Icon(Icons.error_outline_rounded, size: 18)
-                            : Icon(
-                                isSaved
-                                    ? Icons.bookmark_rounded
-                                    : Icons.bookmark_border_rounded,
-                                size: 18,
-                              ),
+                        icon: Icon(
+                          isFavorite
+                              ? Icons.favorite_rounded
+                              : Icons.favorite_border_rounded,
+                          size: 18,
+                        ),
                       );
                     },
                   ),
+                  if (showDownloadAction)
+                    StoryDownloadButton(
+                      story: story,
+                      savedStories: savedStories,
+                    ),
                 ],
               ),
               if (story.description.isNotEmpty) ...[
@@ -172,25 +156,105 @@ class StoryCard extends StatelessWidget {
     );
   }
 
-  Future<void> _toggleSaved(BuildContext context) async {
+  Future<void> _toggleFavorite(BuildContext context) async {
     try {
-      final result = await savedStories.toggle(story);
+      final added = await favorites.toggleStory(story);
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           duration: const Duration(seconds: 1),
-          content: Text(switch (result) {
-            SaveRequestResult.queued => 'Added to download queue',
-            SaveRequestResult.removed => 'Removed from saved',
-            SaveRequestResult.alreadyQueued => 'Already in download queue',
-          }),
+          content: Text(
+            added ? 'Added to favourites' : 'Removed from favourites',
+          ),
         ),
       );
     } catch (_) {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Couldn’t update saved stories')),
+        const SnackBar(content: Text('Couldn’t update favourites')),
       );
+    }
+  }
+}
+
+class StoryDownloadButton extends StatelessWidget {
+  const StoryDownloadButton({
+    super.key,
+    required this.story,
+    required this.savedStories,
+  });
+
+  final ListorItem story;
+  final SavedStoriesViewModel savedStories;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: savedStories,
+      builder: (context, _) {
+        final isDownloaded = savedStories.isSaved(story.id);
+        final download = savedStories.downloadFor(story.id);
+        final isDownloading =
+            download?.status == StoryDownloadStatus.downloading;
+        final isQueued = download?.status == StoryDownloadStatus.queued;
+        final hasFailed = download?.status == StoryDownloadStatus.failed;
+        return IconButton(
+          key: Key('download-story-${story.id}'),
+          onPressed: isDownloading || isQueued
+              ? null
+              : isDownloaded
+              ? () => savedStories.removeSavedStory(story.id)
+              : () => _download(context),
+          tooltip: isDownloaded
+              ? 'Remove download'
+              : isDownloading
+              ? 'Downloading story'
+              : isQueued
+              ? 'Queued for download'
+              : hasFailed
+              ? 'Retry download'
+              : 'Download for offline reading',
+          visualDensity: VisualDensity.compact,
+          constraints: const BoxConstraints.tightFor(width: 32, height: 28),
+          icon: isDownloading
+              ? const SizedBox.square(
+                  dimension: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : Icon(
+                  isDownloaded
+                      ? Icons.download_done_rounded
+                      : isQueued
+                      ? Icons.schedule_rounded
+                      : hasFailed
+                      ? Icons.error_outline_rounded
+                      : Icons.download_for_offline_outlined,
+                  size: 18,
+                ),
+        );
+      },
+    );
+  }
+
+  Future<void> _download(BuildContext context) async {
+    try {
+      final result = await savedStories.downloadStory(story);
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          duration: const Duration(seconds: 1),
+          content: Text(switch (result) {
+            DownloadRequestResult.queued => 'Added to download queue',
+            DownloadRequestResult.alreadyQueued => 'Already in download queue',
+            DownloadRequestResult.alreadyDownloaded => 'Already downloaded',
+          }),
+        ),
+      );
+    } catch (_) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Couldn’t queue download')));
     }
   }
 }

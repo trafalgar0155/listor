@@ -8,7 +8,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 void main() {
   final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('author page uses story cards and saves a story', (tester) async {
+  testWidgets('author page favourites separately from downloads', (
+    tester,
+  ) async {
     SharedPreferences.setMockInitialValues(const {});
     app.main();
 
@@ -31,22 +33,53 @@ void main() {
     }
 
     expect(find.byType(StoryCard), findsWidgets);
-    expect(find.byTooltip('Save story for offline reading'), findsWidgets);
+    final existingFavorite = find
+        .byTooltip('Remove from favourites')
+        .hitTestable();
+    if (existingFavorite.evaluate().isNotEmpty) {
+      await tester.tap(existingFavorite.first);
+      await _pumpUntil(
+        tester,
+        () => find.byTooltip('Add to favourites').evaluate().isNotEmpty,
+      );
+    }
+    expect(find.byTooltip('Add to favourites'), findsWidgets);
     await binding.takeScreenshot('author-story-cards');
 
-    final saveButton = find
-        .byTooltip('Save story for offline reading')
+    final favoriteButton = find
+        .byTooltip('Add to favourites')
         .hitTestable()
         .first;
-    await tester.tap(saveButton);
+    await tester.tap(favoriteButton);
     await _pumpUntil(
       tester,
-      () => find.byTooltip('Remove from saved').evaluate().isNotEmpty,
-      timeout: const Duration(seconds: 45),
+      () => find.byTooltip('Remove from favourites').evaluate().isNotEmpty,
+    );
+    expect(find.byTooltip('Remove from favourites'), findsWidgets);
+
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('favorites-destination')));
+    await _pumpUntil(
+      tester,
+      () =>
+          find.byKey(const Key('favorite-stories-list')).evaluate().isNotEmpty,
     );
 
-    expect(find.byTooltip('Remove from saved'), findsWidgets);
-    await binding.takeScreenshot('author-story-saved');
+    final downloadButton = find
+        .byTooltip('Download for offline reading')
+        .hitTestable();
+    if (downloadButton.evaluate().isNotEmpty) {
+      await tester.tap(downloadButton.first);
+      await _pumpUntil(
+        tester,
+        () => find.byTooltip('Remove download').evaluate().isNotEmpty,
+        timeout: const Duration(seconds: 45),
+      );
+    }
+
+    expect(find.byTooltip('Remove download'), findsWidgets);
+    await binding.takeScreenshot('favourite-story-downloaded');
   });
 }
 

@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:listor/favorites.dart';
 import 'package:listor/literotica_api.dart';
 import 'package:listor/local_story_store.dart';
 import 'package:path/path.dart' as p;
@@ -14,6 +15,7 @@ void main() {
     late String databasePath;
     late StoryDatabaseService database;
     late SqliteSavedStoriesRepository repository;
+    late SqliteFavoritesRepository favoritesRepository;
 
     setUp(() async {
       temporaryDirectory = await Directory.systemTemp.createTemp(
@@ -25,6 +27,7 @@ void main() {
         databasePath: databasePath,
       );
       repository = SqliteSavedStoriesRepository(database: database);
+      favoritesRepository = SqliteFavoritesRepository(database: database);
     });
 
     tearDown(() async {
@@ -144,6 +147,41 @@ void main() {
       ]);
     });
 
+    test('persists story, series, and author favourites separately', () async {
+      final series = AuthorSeries(
+        id: 7,
+        title: 'Harbour Stories',
+        description: 'A connected series.',
+        stories: [_story],
+      );
+
+      await favoritesRepository.saveStory(_story);
+      await favoritesRepository.saveSeries(series);
+      await favoritesRepository.saveAuthor(_story.author);
+      await database.close();
+
+      database = StoryDatabaseService(
+        databaseFactory: databaseFactoryFfi,
+        databasePath: databasePath,
+      );
+      repository = SqliteSavedStoriesRepository(database: database);
+      favoritesRepository = SqliteFavoritesRepository(database: database);
+
+      expect((await favoritesRepository.readStories()).single.id, _story.id);
+      final restoredSeries = (await favoritesRepository.readSeries()).single;
+      expect(restoredSeries.title, series.title);
+      expect(restoredSeries.stories.single.id, _story.id);
+      expect(await favoritesRepository.readAuthors(), [_story.author]);
+      expect(await repository.readAll(), isEmpty);
+
+      await favoritesRepository.removeStory(_story.id);
+      await favoritesRepository.removeSeries(series.id);
+      await favoritesRepository.removeAuthor(_story.author);
+      expect(await favoritesRepository.readStories(), isEmpty);
+      expect(await favoritesRepository.readSeries(), isEmpty);
+      expect(await favoritesRepository.readAuthors(), isEmpty);
+    });
+
     test('migrates version 3 data and adds series metadata columns', () async {
       await database.close();
       final legacy = await databaseFactoryFfi.openDatabase(
@@ -203,6 +241,7 @@ void main() {
         databasePath: databasePath,
       );
       repository = SqliteSavedStoriesRepository(database: database);
+      favoritesRepository = SqliteFavoritesRepository(database: database);
       final legacyStory = (await repository.readAll()).single;
       expect(legacyStory.title, 'Legacy Story');
       expect(legacyStory.seriesId, isNull);
@@ -212,6 +251,8 @@ void main() {
       expect(queued.seriesId, _story.seriesId);
       expect(queued.seriesTitle, _story.seriesTitle);
       expect(queued.seriesPosition, _story.seriesPosition);
+      await favoritesRepository.saveAuthor('Migrated Author');
+      expect(await favoritesRepository.readAuthors(), ['Migrated Author']);
     });
   });
 }

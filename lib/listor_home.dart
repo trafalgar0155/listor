@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'author_works.dart';
+import 'favorites.dart';
 import 'literotica_api.dart';
 import 'local_story_store.dart';
 import 'story_card.dart';
@@ -15,10 +16,12 @@ class ListorHomePage extends StatefulWidget {
     super.key,
     this.repository,
     this.savedStoriesRepository,
+    this.favoritesRepository,
   });
 
   final StoryRepository? repository;
   final SavedStoriesRepository? savedStoriesRepository;
+  final FavoritesRepository? favoritesRepository;
 
   @override
   State<ListorHomePage> createState() => _ListorHomePageState();
@@ -29,6 +32,7 @@ class _ListorHomePageState extends State<ListorHomePage> {
 
   late final StoryRepository _repository;
   late final SavedStoriesViewModel _savedStories;
+  late final FavoritesViewModel _favorites;
   StoryFilters _filters = const StoryFilters();
   int _destinationIndex = 0;
   bool _showNavigation = true;
@@ -37,20 +41,28 @@ class _ListorHomePageState extends State<ListorHomePage> {
   void initState() {
     super.initState();
     final remoteRepository = widget.repository ?? LiteroticaApiClient();
+    final database = StoryDatabaseService();
     final localRepository =
-        widget.savedStoriesRepository ?? SqliteSavedStoriesRepository();
+        widget.savedStoriesRepository ??
+        SqliteSavedStoriesRepository(database: database);
+    final favoritesRepository =
+        widget.favoritesRepository ??
+        SqliteFavoritesRepository(database: database);
     _repository = OfflineFirstStoryRepository(
       remoteRepository,
       localRepository,
     );
     _savedStories = SavedStoriesViewModel(localRepository, _repository);
+    _favorites = FavoritesViewModel(favoritesRepository);
     unawaited(_savedStories.load());
+    unawaited(_favorites.load());
     unawaited(_restoreCategory());
   }
 
   @override
   void dispose() {
     _savedStories.dispose();
+    _favorites.dispose();
     super.dispose();
   }
 
@@ -117,16 +129,19 @@ class _ListorHomePageState extends State<ListorHomePage> {
               filters: _filters,
               repository: _repository,
               savedStories: _savedStories,
+              favorites: _favorites,
               onScroll: _handleScroll,
             ),
             _SearchDestination(
               repository: _repository,
               savedStories: _savedStories,
+              favorites: _favorites,
               onScroll: _handleScroll,
             ),
-            _SavedDestination(
+            _FavoritesDestination(
               repository: _repository,
               savedStories: _savedStories,
+              favorites: _favorites,
               onScroll: _handleScroll,
             ),
           ],
@@ -178,10 +193,10 @@ class _ListorHomePageState extends State<ListorHomePage> {
                 label: 'Search',
               ),
               NavigationDestination(
-                key: Key('saved-destination'),
-                icon: Icon(Icons.bookmarks_outlined),
-                selectedIcon: Icon(Icons.bookmarks_rounded),
-                label: 'Saved',
+                key: Key('favorites-destination'),
+                icon: Icon(Icons.favorite_border_rounded),
+                selectedIcon: Icon(Icons.favorite_rounded),
+                label: 'Favourites',
               ),
             ],
           ),
@@ -201,12 +216,14 @@ class _ExploreView extends StatelessWidget {
     required this.filters,
     required this.repository,
     required this.savedStories,
+    required this.favorites,
     required this.onScroll,
   });
 
   final StoryFilters filters;
   final StoryRepository repository;
   final SavedStoriesViewModel savedStories;
+  final FavoritesViewModel favorites;
   final NotificationListenerCallback<ScrollNotification> onScroll;
 
   @override
@@ -244,6 +261,7 @@ class _ExploreView extends StatelessWidget {
                 filters: filters,
                 repository: repository,
                 savedStories: savedStories,
+                favorites: favorites,
               ),
           ],
         ),
@@ -256,11 +274,13 @@ class _SearchDestination extends StatefulWidget {
   const _SearchDestination({
     required this.repository,
     required this.savedStories,
+    required this.favorites,
     required this.onScroll,
   });
 
   final StoryRepository repository;
   final SavedStoriesViewModel savedStories;
+  final FavoritesViewModel favorites;
   final NotificationListenerCallback<ScrollNotification> onScroll;
 
   @override
@@ -397,6 +417,7 @@ class _SearchDestinationState extends State<_SearchDestination> {
                   viewModel: _viewModel,
                   repository: widget.repository,
                   savedStories: widget.savedStories,
+                  favorites: widget.favorites,
                 ),
               ),
             ],
@@ -412,11 +433,13 @@ class _SearchResults extends StatelessWidget {
     required this.viewModel,
     required this.repository,
     required this.savedStories,
+    required this.favorites,
   });
 
   final StorySearchViewModel viewModel;
   final StoryRepository repository;
   final SavedStoriesViewModel savedStories;
+  final FavoritesViewModel favorites;
 
   @override
   Widget build(BuildContext context) {
@@ -469,6 +492,7 @@ class _SearchResults extends StatelessWidget {
             item: viewModel.stories[index],
             repository: repository,
             savedStories: savedStories,
+            favorites: favorites,
           );
         },
       ),
@@ -546,65 +570,276 @@ class _SearchMessage extends StatelessWidget {
   }
 }
 
-class _SavedDestination extends StatelessWidget {
-  const _SavedDestination({
+class _FavoritesDestination extends StatelessWidget {
+  const _FavoritesDestination({
     required this.repository,
     required this.savedStories,
+    required this.favorites,
     required this.onScroll,
   });
 
   final StoryRepository repository;
   final SavedStoriesViewModel savedStories;
+  final FavoritesViewModel favorites;
   final NotificationListenerCallback<ScrollNotification> onScroll;
 
   @override
   Widget build(BuildContext context) {
-    return NotificationListener<ScrollNotification>(
-      onNotification: onScroll,
-      child: NestedScrollView(
-        floatHeaderSlivers: true,
-        headerSliverBuilder: (context, innerBoxIsScrolled) => [
-          SliverAppBar(
-            floating: true,
-            snap: true,
-            toolbarHeight: 48,
-            titleSpacing: 16,
-            title: Text(
-              'Saved',
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                fontWeight: FontWeight.w800,
-                letterSpacing: -0.6,
+    return DefaultTabController(
+      length: 3,
+      child: NotificationListener<ScrollNotification>(
+        onNotification: onScroll,
+        child: NestedScrollView(
+          floatHeaderSlivers: true,
+          headerSliverBuilder: (context, innerBoxIsScrolled) => [
+            SliverAppBar(
+              floating: true,
+              snap: true,
+              pinned: true,
+              toolbarHeight: 48,
+              titleSpacing: 16,
+              title: Text(
+                'Favourites',
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -0.6,
+                ),
               ),
-            ),
-            actions: [
-              ListenableBuilder(
-                listenable: savedStories,
-                builder: (context, _) => Badge.count(
-                  count: savedStories.downloads.length,
-                  isLabelVisible: savedStories.downloads.isNotEmpty,
-                  child: IconButton(
-                    key: const Key('downloads-action'),
-                    tooltip: 'Downloads',
-                    onPressed: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute<void>(
-                          builder: (_) =>
-                              _DownloadsPage(savedStories: savedStories),
-                        ),
-                      );
-                    },
-                    icon: const Icon(Icons.download_rounded),
+              actions: [
+                ListenableBuilder(
+                  listenable: savedStories,
+                  builder: (context, _) => Badge.count(
+                    count: savedStories.downloads.length,
+                    isLabelVisible: savedStories.downloads.isNotEmpty,
+                    child: IconButton(
+                      key: const Key('downloads-action'),
+                      tooltip: 'Downloads',
+                      onPressed: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => _DownloadsPage(
+                              repository: repository,
+                              savedStories: savedStories,
+                              favorites: favorites,
+                            ),
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.download_rounded),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 4),
+              ],
+              bottom: const PreferredSize(
+                preferredSize: Size.fromHeight(44),
+                child: SizedBox(
+                  height: 44,
+                  child: TabBar(
+                    tabs: [
+                      Tab(text: 'Stories'),
+                      Tab(text: 'Series'),
+                      Tab(text: 'Author'),
+                    ],
                   ),
                 ),
               ),
-              const SizedBox(width: 4),
-            ],
+            ),
+          ],
+          body: ListenableBuilder(
+            listenable: favorites,
+            builder: (context, _) {
+              if (favorites.isLoading) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              if (favorites.loadError != null) {
+                return Center(
+                  child: FilledButton.tonalIcon(
+                    onPressed: favorites.load,
+                    icon: const Icon(Icons.refresh_rounded),
+                    label: const Text('Retry loading favourites'),
+                  ),
+                );
+              }
+              return TabBarView(
+                children: [
+                  _FavoriteStoriesView(
+                    stories: favorites.stories,
+                    repository: repository,
+                    savedStories: savedStories,
+                    favorites: favorites,
+                  ),
+                  _FavoriteSeriesView(
+                    series: favorites.series,
+                    repository: repository,
+                    savedStories: savedStories,
+                    favorites: favorites,
+                  ),
+                  _FavoriteAuthorsView(
+                    authors: favorites.authors,
+                    repository: repository,
+                    savedStories: savedStories,
+                    favorites: favorites,
+                  ),
+                ],
+              );
+            },
           ),
-        ],
-        body: _SavedStoriesView(
-          repository: repository,
-          savedStories: savedStories,
         ),
+      ),
+    );
+  }
+}
+
+class _FavoriteStoriesView extends StatelessWidget {
+  const _FavoriteStoriesView({
+    required this.stories,
+    required this.repository,
+    required this.savedStories,
+    required this.favorites,
+  });
+
+  final List<ListorItem> stories;
+  final StoryRepository repository;
+  final SavedStoriesViewModel savedStories;
+  final FavoritesViewModel favorites;
+
+  @override
+  Widget build(BuildContext context) {
+    if (stories.isEmpty) {
+      return const _FavoritesEmptyState(
+        icon: Icons.favorite_border_rounded,
+        message: 'No favourite stories yet',
+      );
+    }
+    return ListView.separated(
+      key: const Key('favorite-stories-list'),
+      padding: const EdgeInsets.all(10),
+      itemCount: stories.length,
+      separatorBuilder: (_, _) => const SizedBox(height: 6),
+      itemBuilder: (context, index) => _StoryCard(
+        item: stories[index],
+        repository: repository,
+        savedStories: savedStories,
+        favorites: favorites,
+        showDownloadAction: true,
+      ),
+    );
+  }
+}
+
+class _FavoriteSeriesView extends StatelessWidget {
+  const _FavoriteSeriesView({
+    required this.series,
+    required this.repository,
+    required this.savedStories,
+    required this.favorites,
+  });
+
+  final List<AuthorSeries> series;
+  final StoryRepository repository;
+  final SavedStoriesViewModel savedStories;
+  final FavoritesViewModel favorites;
+
+  @override
+  Widget build(BuildContext context) {
+    if (series.isEmpty) {
+      return const _FavoritesEmptyState(
+        icon: Icons.collections_bookmark_outlined,
+        message: 'No favourite series yet',
+      );
+    }
+    return ListView.separated(
+      key: const Key('favorite-series-list'),
+      padding: const EdgeInsets.all(10),
+      itemCount: series.length,
+      separatorBuilder: (_, _) => const SizedBox(height: 6),
+      itemBuilder: (context, index) => _FavoriteSeriesCard(
+        series: series[index],
+        repository: repository,
+        savedStories: savedStories,
+        favorites: favorites,
+      ),
+    );
+  }
+}
+
+class _FavoriteAuthorsView extends StatelessWidget {
+  const _FavoriteAuthorsView({
+    required this.authors,
+    required this.repository,
+    required this.savedStories,
+    required this.favorites,
+  });
+
+  final List<String> authors;
+  final StoryRepository repository;
+  final SavedStoriesViewModel savedStories;
+  final FavoritesViewModel favorites;
+
+  @override
+  Widget build(BuildContext context) {
+    if (authors.isEmpty) {
+      return const _FavoritesEmptyState(
+        icon: Icons.person_outline_rounded,
+        message: 'No favourite authors yet',
+      );
+    }
+    return ListView.separated(
+      key: const Key('favorite-authors-list'),
+      padding: const EdgeInsets.all(10),
+      itemCount: authors.length,
+      separatorBuilder: (_, _) => const SizedBox(height: 6),
+      itemBuilder: (context, index) {
+        final author = authors[index];
+        return Card(
+          child: ListTile(
+            key: Key('favorite-author-$author'),
+            leading: const CircleAvatar(child: Icon(Icons.person_rounded)),
+            title: Text(
+              author,
+              style: const TextStyle(fontWeight: FontWeight.w700),
+            ),
+            trailing: IconButton(
+              tooltip: 'Remove author from favourites',
+              onPressed: () => favorites.toggleAuthor(author),
+              icon: const Icon(Icons.favorite_rounded),
+            ),
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => AuthorWorksPage(
+                    author: author,
+                    repository: repository,
+                    savedStories: savedStories,
+                    favorites: favorites,
+                  ),
+                ),
+              );
+            },
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _FavoritesEmptyState extends StatelessWidget {
+  const _FavoritesEmptyState({required this.icon, required this.message});
+
+  final IconData icon;
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 44),
+          const SizedBox(height: 12),
+          Text(message),
+        ],
       ),
     );
   }
@@ -877,12 +1112,14 @@ class _FeedPage extends StatefulWidget {
     required this.filters,
     required this.repository,
     required this.savedStories,
+    required this.favorites,
   });
 
   final FeedType feed;
   final StoryFilters filters;
   final StoryRepository repository;
   final SavedStoriesViewModel savedStories;
+  final FavoritesViewModel favorites;
 
   @override
   State<_FeedPage> createState() => _FeedPageState();
@@ -998,6 +1235,7 @@ class _FeedPageState extends State<_FeedPage> {
               item: _items[index],
               repository: widget.repository,
               savedStories: widget.savedStories,
+              favorites: widget.favorites,
             );
           },
         ),
@@ -1046,17 +1284,23 @@ class _StoryCard extends StatelessWidget {
     required this.item,
     required this.repository,
     required this.savedStories,
+    required this.favorites,
+    this.showDownloadAction = false,
   });
 
   final ListorItem item;
   final StoryRepository repository;
   final SavedStoriesViewModel savedStories;
+  final FavoritesViewModel favorites;
+  final bool showDownloadAction;
 
   @override
   Widget build(BuildContext context) {
     return StoryCard(
       story: item,
+      favorites: favorites,
       savedStories: savedStories,
+      showDownloadAction: showDownloadAction,
       onTap: () {
         Navigator.of(context).push(
           MaterialPageRoute<void>(
@@ -1079,7 +1323,88 @@ class _StoryCard extends StatelessWidget {
           author: item.author,
           repository: repository,
           savedStories: savedStories,
+          favorites: favorites,
         ),
+      ),
+    );
+  }
+}
+
+class _FavoriteSeriesCard extends StatelessWidget {
+  const _FavoriteSeriesCard({
+    required this.series,
+    required this.repository,
+    required this.savedStories,
+    required this.favorites,
+  });
+
+  final AuthorSeries series;
+  final StoryRepository repository;
+  final SavedStoriesViewModel savedStories;
+  final FavoritesViewModel favorites;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: ExpansionTile(
+        key: Key('favorite-series-${series.id}'),
+        leading: const Icon(Icons.library_books_outlined),
+        title: Row(
+          children: [
+            Expanded(
+              child: Text(
+                series.title,
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
+            ),
+            IconButton(
+              tooltip: 'Remove series from favourites',
+              onPressed: () => favorites.toggleSeries(series),
+              icon: const Icon(Icons.favorite_rounded),
+            ),
+            ListenableBuilder(
+              listenable: savedStories,
+              builder: (context, _) {
+                final isDownloaded = savedStories.isSeriesSaved(series);
+                final isDownloading = savedStories.isSeriesDownloading(series);
+                return IconButton(
+                  key: Key('download-favorite-series-${series.id}'),
+                  tooltip: isDownloaded
+                      ? 'Series downloaded'
+                      : isDownloading
+                      ? 'Series download in progress'
+                      : 'Download series',
+                  onPressed: isDownloaded || isDownloading
+                      ? null
+                      : () => savedStories.downloadSeries(series),
+                  icon: Icon(
+                    isDownloaded
+                        ? Icons.download_done_rounded
+                        : Icons.download_for_offline_outlined,
+                  ),
+                );
+              },
+            ),
+          ],
+        ),
+        subtitle: Text(
+          '${series.stories.length} ${series.stories.length == 1 ? 'story' : 'stories'}',
+        ),
+        childrenPadding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+        children: [
+          for (final story in series.stories)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: _StoryCard(
+                item: story,
+                repository: repository,
+                savedStories: savedStories,
+                favorites: favorites,
+                showDownloadAction: true,
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -1089,10 +1414,12 @@ class _SavedStoriesView extends StatelessWidget {
   const _SavedStoriesView({
     required this.repository,
     required this.savedStories,
+    required this.favorites,
   });
 
   final StoryRepository repository;
   final SavedStoriesViewModel savedStories;
+  final FavoritesViewModel favorites;
 
   @override
   Widget build(BuildContext context) {
@@ -1123,7 +1450,7 @@ class _SavedStoriesView extends StatelessWidget {
                 children: [
                   Icon(Icons.bookmarks_outlined, size: 42),
                   SizedBox(height: 14),
-                  Text('No saved stories yet'),
+                  Text('No downloaded stories yet'),
                   SizedBox(height: 6),
                   Text(
                     'Stories appear here after their download finishes.',
@@ -1150,6 +1477,7 @@ class _SavedStoriesView extends StatelessWidget {
                   series: item,
                   repository: repository,
                   savedStories: savedStories,
+                  favorites: favorites,
                 ),
               const SizedBox(height: 12),
             ],
@@ -1164,6 +1492,8 @@ class _SavedStoriesView extends StatelessWidget {
                   item: story,
                   repository: repository,
                   savedStories: savedStories,
+                  favorites: favorites,
+                  showDownloadAction: true,
                 ),
                 const SizedBox(height: 6),
               ],
@@ -1213,11 +1543,13 @@ class _SavedSeriesCard extends StatelessWidget {
     required this.series,
     required this.repository,
     required this.savedStories,
+    required this.favorites,
   });
 
   final AuthorSeries series;
   final StoryRepository repository;
   final SavedStoriesViewModel savedStories;
+  final FavoritesViewModel favorites;
 
   @override
   Widget build(BuildContext context) {
@@ -1231,7 +1563,7 @@ class _SavedSeriesCard extends StatelessWidget {
           style: const TextStyle(fontWeight: FontWeight.w700),
         ),
         subtitle: Text(
-          '${series.stories.length} ${series.stories.length == 1 ? 'story' : 'stories'} saved',
+          '${series.stories.length} ${series.stories.length == 1 ? 'story' : 'stories'} downloaded',
         ),
         childrenPadding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
         children: [
@@ -1242,6 +1574,8 @@ class _SavedSeriesCard extends StatelessWidget {
                 item: story,
                 repository: repository,
                 savedStories: savedStories,
+                favorites: favorites,
+                showDownloadAction: true,
               ),
             ),
         ],
@@ -1251,51 +1585,82 @@ class _SavedSeriesCard extends StatelessWidget {
 }
 
 class _DownloadsPage extends StatelessWidget {
-  const _DownloadsPage({required this.savedStories});
+  const _DownloadsPage({
+    required this.repository,
+    required this.savedStories,
+    required this.favorites,
+  });
+
+  final StoryRepository repository;
+  final SavedStoriesViewModel savedStories;
+  final FavoritesViewModel favorites;
+
+  @override
+  Widget build(BuildContext context) {
+    return DefaultTabController(
+      length: 2,
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Downloads'),
+          bottom: const TabBar(
+            tabs: [
+              Tab(text: 'Downloaded'),
+              Tab(text: 'Queue'),
+            ],
+          ),
+        ),
+        body: TabBarView(
+          children: [
+            _SavedStoriesView(
+              repository: repository,
+              savedStories: savedStories,
+              favorites: favorites,
+            ),
+            _DownloadQueueView(savedStories: savedStories),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DownloadQueueView extends StatelessWidget {
+  const _DownloadQueueView({required this.savedStories});
 
   final SavedStoriesViewModel savedStories;
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Downloads')),
-      body: ListenableBuilder(
-        listenable: savedStories,
-        builder: (context, _) {
-          final downloads = savedStories.downloads;
-          if (downloads.isEmpty) {
-            return const Center(
-              child: Padding(
-                padding: EdgeInsets.all(32),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.download_done_rounded, size: 42),
-                    SizedBox(height: 14),
-                    Text('No active downloads'),
-                    SizedBox(height: 6),
-                    Text(
-                      'Saved stories will appear here while downloading.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: Color(0xFF7D8996)),
-                    ),
-                  ],
-                ),
+    return ListenableBuilder(
+      listenable: savedStories,
+      builder: (context, _) {
+        final downloads = savedStories.downloads;
+        if (downloads.isEmpty) {
+          return const Center(
+            child: Padding(
+              padding: EdgeInsets.all(32),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.download_done_rounded, size: 42),
+                  SizedBox(height: 14),
+                  Text('No active downloads'),
+                ],
               ),
-            );
-          }
-          return ListView.separated(
-            key: const Key('downloads-list'),
-            padding: const EdgeInsets.all(10),
-            itemCount: downloads.length,
-            separatorBuilder: (_, _) => const SizedBox(height: 6),
-            itemBuilder: (context, index) => _DownloadCard(
-              download: downloads[index],
-              savedStories: savedStories,
             ),
           );
-        },
-      ),
+        }
+        return ListView.separated(
+          key: const Key('downloads-list'),
+          padding: const EdgeInsets.all(10),
+          itemCount: downloads.length,
+          separatorBuilder: (_, _) => const SizedBox(height: 6),
+          itemBuilder: (context, index) => _DownloadCard(
+            download: downloads[index],
+            savedStories: savedStories,
+          ),
+        );
+      },
     );
   }
 }

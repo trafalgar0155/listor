@@ -24,7 +24,7 @@ class StoryDownload {
   }
 }
 
-enum SaveRequestResult { queued, removed, alreadyQueued }
+enum DownloadRequestResult { queued, alreadyQueued, alreadyDownloaded }
 
 abstract interface class SavedStoriesRepository {
   Future<List<ListorItem>> readAll();
@@ -55,10 +55,14 @@ class StoryDatabaseService {
     : _databaseFactory = databaseFactory ?? databaseFactorySqflitePlugin;
 
   static const _databaseName = 'listor.db';
-  static const _databaseVersion = 4;
+  static const _databaseVersion = 5;
   static const savedStoriesTable = 'saved_stories';
   static const storyPagesTable = 'story_pages';
   static const downloadsTable = 'downloads';
+  static const favoriteStoriesTable = 'favorite_stories';
+  static const favoriteSeriesTable = 'favorite_series';
+  static const favoriteSeriesStoriesTable = 'favorite_series_stories';
+  static const favoriteAuthorsTable = 'favorite_authors';
 
   final DatabaseFactory _databaseFactory;
   final String? databasePath;
@@ -81,6 +85,7 @@ class StoryDatabaseService {
           await _createSavedStoriesTable(database);
           await _createStoryPagesTable(database);
           await _createDownloadsTable(database);
+          await _createFavoritesTables(database);
         },
         onUpgrade: (database, oldVersion, newVersion) async {
           if (oldVersion < 2) await _createStoryPagesTable(database);
@@ -91,6 +96,7 @@ class StoryDatabaseService {
               includeDownloads: oldVersion >= 3,
             );
           }
+          if (oldVersion < 5) await _createFavoritesTables(database);
         },
       ),
     );
@@ -147,6 +153,61 @@ class StoryDatabaseService {
         status TEXT NOT NULL,
         error TEXT,
         queued_at INTEGER NOT NULL
+      )
+    ''');
+  }
+
+  static Future<void> _createFavoritesTables(Database database) async {
+    await database.execute('''
+      CREATE TABLE $favoriteStoriesTable (
+        id INTEGER PRIMARY KEY,
+        title TEXT NOT NULL,
+        description TEXT NOT NULL,
+        category_id INTEGER NOT NULL,
+        author TEXT NOT NULL,
+        approved_at INTEGER,
+        favorite_count INTEGER NOT NULL,
+        rating REAL,
+        url TEXT NOT NULL,
+        series_id INTEGER,
+        series_title TEXT,
+        series_position INTEGER,
+        favorited_at INTEGER NOT NULL
+      )
+    ''');
+    await database.execute('''
+      CREATE TABLE $favoriteSeriesTable (
+        id INTEGER PRIMARY KEY,
+        title TEXT NOT NULL,
+        description TEXT NOT NULL,
+        author TEXT NOT NULL,
+        favorited_at INTEGER NOT NULL
+      )
+    ''');
+    await database.execute('''
+      CREATE TABLE $favoriteSeriesStoriesTable (
+        favorite_series_id INTEGER NOT NULL,
+        id INTEGER NOT NULL,
+        title TEXT NOT NULL,
+        description TEXT NOT NULL,
+        category_id INTEGER NOT NULL,
+        author TEXT NOT NULL,
+        approved_at INTEGER,
+        favorite_count INTEGER NOT NULL,
+        rating REAL,
+        url TEXT NOT NULL,
+        series_id INTEGER,
+        series_title TEXT,
+        series_position INTEGER,
+        PRIMARY KEY (favorite_series_id, id),
+        FOREIGN KEY (favorite_series_id) REFERENCES $favoriteSeriesTable(id)
+          ON DELETE CASCADE
+      )
+    ''');
+    await database.execute('''
+      CREATE TABLE $favoriteAuthorsTable (
+        author TEXT PRIMARY KEY,
+        favorited_at INTEGER NOT NULL
       )
     ''');
   }
@@ -289,7 +350,7 @@ class SqliteSavedStoriesRepository implements SavedStoriesRepository {
   @override
   Future<List<ListorItem>> readAll() async {
     final rows = await _database.readSavedStories();
-    return rows.map(_storyFromRow).toList(growable: false);
+    return rows.map(storyFromRow).toList(growable: false);
   }
 
   @override
@@ -302,7 +363,7 @@ class SqliteSavedStoriesRepository implements SavedStoriesRepository {
             orElse: () => StoryDownloadStatus.queued,
           );
           return StoryDownload(
-            story: _storyFromRow(row),
+            story: storyFromRow(row),
             status: storedStatus == StoryDownloadStatus.downloading
                 ? StoryDownloadStatus.queued
                 : storedStatus,
@@ -324,7 +385,7 @@ class SqliteSavedStoriesRepository implements SavedStoriesRepository {
   @override
   Future<void> save(ListorItem story, StoryDocument document) {
     return _database.upsertSavedStory({
-      ..._storyValues(story),
+      ...storyValues(story),
       'saved_at': DateTime.now().millisecondsSinceEpoch,
     }, document.pages);
   }
@@ -338,7 +399,7 @@ class SqliteSavedStoriesRepository implements SavedStoriesRepository {
     final queuedAt = now > _lastQueuedAt ? now : _lastQueuedAt + 1;
     _lastQueuedAt = queuedAt;
     return _database.insertDownload({
-      ..._storyValues(story),
+      ...storyValues(story),
       'status': StoryDownloadStatus.queued.name,
       'error': null,
       'queued_at': queuedAt,
@@ -504,25 +565,21 @@ class SavedStoriesViewModel extends ChangeNotifier {
     }
   }
 
-  Future<SaveRequestResult> toggle(ListorItem story) async {
+  Future<DownloadRequestResult> downloadStory(ListorItem story) async {
     await load();
     if (!_hasLoaded) throw StateError('Saved stories could not be loaded.');
     final existingIndex = _stories.indexWhere((item) => item.id == story.id);
     if (existingIndex >= 0) {
-      await _repository.remove(story.id);
-      _stories.removeAt(existingIndex);
-      _savedStoryIds.remove(story.id);
-      notifyListeners();
-      return SaveRequestResult.removed;
+      return DownloadRequestResult.alreadyDownloaded;
     }
 
     final existingDownload = downloadFor(story.id);
     if (existingDownload != null) {
       if (existingDownload.status == StoryDownloadStatus.failed) {
         await retryDownload(story.id);
-        return SaveRequestResult.queued;
+        return DownloadRequestResult.queued;
       }
-      return SaveRequestResult.alreadyQueued;
+      return DownloadRequestResult.alreadyQueued;
     }
 
     await _repository.enqueueDownload(story);
@@ -531,7 +588,16 @@ class SavedStoriesViewModel extends ChangeNotifier {
     );
     notifyListeners();
     _startDownloadProcessor();
-    return SaveRequestResult.queued;
+    return DownloadRequestResult.queued;
+  }
+
+  Future<void> removeSavedStory(int storyId) async {
+    final index = _stories.indexWhere((story) => story.id == storyId);
+    if (index < 0) return;
+    await _repository.remove(storyId);
+    _stories.removeAt(index);
+    _savedStoryIds.remove(storyId);
+    notifyListeners();
   }
 
   Future<int> downloadSeries(AuthorSeries series) async {
@@ -655,7 +721,7 @@ class SavedStoriesViewModel extends ChangeNotifier {
   }
 }
 
-Map<String, Object?> _storyValues(ListorItem story) {
+Map<String, Object?> storyValues(ListorItem story) {
   return {
     'id': story.id,
     'title': story.title,
@@ -672,7 +738,7 @@ Map<String, Object?> _storyValues(ListorItem story) {
   };
 }
 
-ListorItem _storyFromRow(Map<String, Object?> row) {
+ListorItem storyFromRow(Map<String, Object?> row) {
   final categoryId = row['category_id']! as int;
   final category = ListorCategory.values.firstWhere(
     (candidate) => candidate.id == categoryId,

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'favorites.dart';
 import 'literotica_api.dart';
 import 'local_story_store.dart';
 import 'story_card.dart';
@@ -40,11 +41,13 @@ class AuthorWorksPage extends StatefulWidget {
     required this.author,
     required this.repository,
     required this.savedStories,
+    required this.favorites,
   });
 
   final String author;
   final StoryRepository repository;
   final SavedStoriesViewModel savedStories;
+  final FavoritesViewModel favorites;
 
   @override
   State<AuthorWorksPage> createState() => _AuthorWorksPageState();
@@ -73,7 +76,31 @@ class _AuthorWorksPageState extends State<AuthorWorksPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       key: const Key('author-works-page'),
-      appBar: AppBar(title: Text(widget.author)),
+      appBar: AppBar(
+        title: Text(widget.author),
+        actions: [
+          ListenableBuilder(
+            listenable: widget.favorites,
+            builder: (context, _) {
+              final isFavorite = widget.favorites.isAuthorFavorite(
+                widget.author,
+              );
+              return IconButton(
+                key: const Key('favorite-author'),
+                tooltip: isFavorite
+                    ? 'Remove author from favourites'
+                    : 'Add author to favourites',
+                onPressed: () => widget.favorites.toggleAuthor(widget.author),
+                icon: Icon(
+                  isFavorite
+                      ? Icons.favorite_rounded
+                      : Icons.favorite_border_rounded,
+                ),
+              );
+            },
+          ),
+        ],
+      ),
       body: ListenableBuilder(
         listenable: _viewModel,
         builder: (context, _) {
@@ -93,6 +120,7 @@ class _AuthorWorksPageState extends State<AuthorWorksPage> {
             works: works,
             repository: widget.repository,
             savedStories: widget.savedStories,
+            favorites: widget.favorites,
           );
         },
       ),
@@ -105,11 +133,13 @@ class _AuthorWorksList extends StatelessWidget {
     required this.works,
     required this.repository,
     required this.savedStories,
+    required this.favorites,
   });
 
   final AuthorWorks works;
   final StoryRepository repository;
   final SavedStoriesViewModel savedStories;
+  final FavoritesViewModel favorites;
 
   @override
   Widget build(BuildContext context) {
@@ -128,6 +158,7 @@ class _AuthorWorksList extends StatelessWidget {
               series: series,
               repository: repository,
               savedStories: savedStories,
+              favorites: favorites,
             ),
           const SizedBox(height: 14),
         ],
@@ -142,6 +173,7 @@ class _AuthorWorksList extends StatelessWidget {
               story: story,
               repository: repository,
               savedStories: savedStories,
+              favorites: favorites,
             ),
         ],
       ],
@@ -187,11 +219,13 @@ class _SeriesCard extends StatelessWidget {
     required this.series,
     required this.repository,
     required this.savedStories,
+    required this.favorites,
   });
 
   final AuthorSeries series;
   final StoryRepository repository;
   final SavedStoriesViewModel savedStories;
+  final FavoritesViewModel favorites;
 
   @override
   Widget build(BuildContext context) {
@@ -207,6 +241,25 @@ class _SeriesCard extends StatelessWidget {
                 series.title,
                 style: const TextStyle(fontWeight: FontWeight.w700),
               ),
+            ),
+            ListenableBuilder(
+              listenable: favorites,
+              builder: (context, _) {
+                final isFavorite = favorites.isSeriesFavorite(series.id);
+                return IconButton(
+                  key: Key('favorite-series-${series.id}'),
+                  visualDensity: VisualDensity.compact,
+                  tooltip: isFavorite
+                      ? 'Remove series from favourites'
+                      : 'Add series to favourites',
+                  onPressed: () => favorites.toggleSeries(series),
+                  icon: Icon(
+                    isFavorite
+                        ? Icons.favorite_rounded
+                        : Icons.favorite_border_rounded,
+                  ),
+                );
+              },
             ),
             ListenableBuilder(
               listenable: savedStories,
@@ -265,6 +318,7 @@ class _SeriesCard extends StatelessWidget {
               story: series.stories[index],
               repository: repository,
               savedStories: savedStories,
+              favorites: favorites,
             ),
         ],
       ),
@@ -299,19 +353,23 @@ class _SeriesStoryTile extends StatelessWidget {
     required this.story,
     required this.repository,
     required this.savedStories,
+    required this.favorites,
   });
 
   final ListorItem story;
   final StoryRepository repository;
   final SavedStoriesViewModel savedStories;
+  final FavoritesViewModel favorites;
 
   @override
   Widget build(BuildContext context) {
     return StoryCard(
       key: Key('author-story-${story.id}'),
       story: story,
+      favorites: favorites,
       savedStories: savedStories,
-      onTap: () => _openStory(context, story, repository, savedStories),
+      onTap: () =>
+          _openStory(context, story, repository, savedStories, favorites),
     );
   }
 }
@@ -321,19 +379,23 @@ class _AuthorStoryCard extends StatelessWidget {
     required this.story,
     required this.repository,
     required this.savedStories,
+    required this.favorites,
   });
 
   final ListorItem story;
   final StoryRepository repository;
   final SavedStoriesViewModel savedStories;
+  final FavoritesViewModel favorites;
 
   @override
   Widget build(BuildContext context) {
     return StoryCard(
       key: Key('author-story-${story.id}'),
       story: story,
+      favorites: favorites,
       savedStories: savedStories,
-      onTap: () => _openStory(context, story, repository, savedStories),
+      onTap: () =>
+          _openStory(context, story, repository, savedStories, favorites),
     );
   }
 }
@@ -343,6 +405,7 @@ void _openStory(
   ListorItem story,
   StoryRepository repository,
   SavedStoriesViewModel savedStories,
+  FavoritesViewModel favorites,
 ) {
   Navigator.of(context).push(
     MaterialPageRoute<void>(
@@ -356,6 +419,7 @@ void _openStory(
                 author: story.author,
                 repository: repository,
                 savedStories: savedStories,
+                favorites: favorites,
               ),
             ),
           );

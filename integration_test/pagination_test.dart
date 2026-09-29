@@ -38,32 +38,40 @@ void main() {
     expect(position.maxScrollExtent, greaterThan(initialExtent));
     await binding.takeScreenshot('non-erotic-next-page');
 
-    final saveButton = find
-        .byTooltip('Save story for offline reading')
+    final favoriteButton = find
+        .byTooltip('Add to favourites')
         .hitTestable()
         .first;
-    expect(saveButton, findsOneWidget);
-    await tester.tap(saveButton);
+    expect(favoriteButton, findsOneWidget);
+    await tester.tap(favoriteButton);
     await _pumpUntil(
       tester,
-      () => find.byTooltip('Remove from saved').evaluate().isNotEmpty,
+      () => find.byTooltip('Remove from favourites').evaluate().isNotEmpty,
     );
 
     await tester.fling(listFinder, const Offset(0, 500), 1200);
     await tester.pumpAndSettle();
-    final savedDestination = find
-        .byKey(const Key('saved-destination'))
+    final favoritesDestination = find
+        .byKey(const Key('favorites-destination'))
         .hitTestable();
-    expect(savedDestination, findsOneWidget);
-    await tester.tap(savedDestination);
+    expect(favoritesDestination, findsOneWidget);
+    await tester.tap(favoritesDestination);
     await _pumpUntil(
       tester,
-      () => find.byKey(const Key('saved-stories-list')).evaluate().isNotEmpty,
+      () =>
+          find.byKey(const Key('favorite-stories-list')).evaluate().isNotEmpty,
     );
-    await tester.pumpAndSettle();
-    expect(find.text('Saved'), findsWidgets);
-    await tester.pump(const Duration(seconds: 2));
-    await binding.takeScreenshot('saved-stories-sqlite');
+    final downloadButton = find
+        .byTooltip('Download for offline reading')
+        .hitTestable()
+        .first;
+    await tester.tap(downloadButton);
+    await _pumpUntil(
+      tester,
+      () => find.byTooltip('Remove download').evaluate().isNotEmpty,
+      timeout: const Duration(seconds: 45),
+    );
+    await binding.takeScreenshot('favourite-downloaded-sqlite');
   });
 }
 
