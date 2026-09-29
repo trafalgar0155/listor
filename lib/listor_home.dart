@@ -3,12 +3,14 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'app_settings.dart';
 import 'author_works.dart';
 import 'favorites.dart';
 import 'literotica_api.dart';
 import 'local_story_store.dart';
 import 'reading_history.dart';
 import 'reading_history_view.dart';
+import 'settings_page.dart';
 import 'story_card.dart';
 import 'story_reader.dart';
 import 'story_search.dart';
@@ -20,12 +22,16 @@ class ListorHomePage extends StatefulWidget {
     this.savedStoriesRepository,
     this.favoritesRepository,
     this.historyRepository,
+    required this.settings,
+    required this.biometricAuthenticator,
   });
 
   final StoryRepository? repository;
   final SavedStoriesRepository? savedStoriesRepository;
   final FavoritesRepository? favoritesRepository;
   final ReadingHistoryRepository? historyRepository;
+  final AppSettingsController settings;
+  final BiometricAuthenticator biometricAuthenticator;
 
   @override
   State<ListorHomePage> createState() => _ListorHomePageState();
@@ -62,7 +68,10 @@ class _ListorHomePageState extends State<ListorHomePage> {
     );
     _savedStories = SavedStoriesViewModel(localRepository, _repository);
     _favorites = FavoritesViewModel(favoritesRepository);
-    _history = ReadingHistoryViewModel(historyRepository);
+    _history = ReadingHistoryViewModel(
+      historyRepository,
+      enabled: widget.settings.historyEnabled,
+    );
     unawaited(_savedStories.load());
     unawaited(_favorites.load());
     unawaited(_history.load());
@@ -165,6 +174,11 @@ class _ListorHomePageState extends State<ListorHomePage> {
               history: _history,
               onScroll: _handleScroll,
             ),
+            SettingsDestination(
+              settings: widget.settings,
+              history: _history,
+              authenticator: widget.biometricAuthenticator,
+            ),
           ],
         ),
         floatingActionButton: isExploring
@@ -224,6 +238,12 @@ class _ListorHomePageState extends State<ListorHomePage> {
                 icon: Icon(Icons.favorite_border_rounded),
                 selectedIcon: Icon(Icons.favorite_rounded),
                 label: 'Favourites',
+              ),
+              NavigationDestination(
+                key: Key('settings-destination'),
+                icon: Icon(Icons.settings_outlined),
+                selectedIcon: Icon(Icons.settings_rounded),
+                label: 'Settings',
               ),
             ],
           ),

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_html/flutter_html.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:listor/app_settings.dart';
 import 'package:listor/favorites.dart';
 import 'package:listor/literotica_api.dart';
 import 'package:listor/local_story_store.dart';
@@ -15,6 +16,8 @@ void main() {
   late _FakeSavedStoriesRepository savedStoriesRepository;
   late _FakeFavoritesRepository favoritesRepository;
   late _FakeReadingHistoryRepository historyRepository;
+  late _FakeAppSettingsRepository settingsRepository;
+  late _FakeBiometricAuthenticator biometricAuthenticator;
 
   setUp(() {
     SharedPreferences.setMockInitialValues({});
@@ -22,6 +25,8 @@ void main() {
     savedStoriesRepository = _FakeSavedStoriesRepository();
     favoritesRepository = _FakeFavoritesRepository();
     historyRepository = _FakeReadingHistoryRepository();
+    settingsRepository = _FakeAppSettingsRepository();
+    biometricAuthenticator = _FakeBiometricAuthenticator();
   });
 
   ListorApp buildApp() => ListorApp(
@@ -29,6 +34,8 @@ void main() {
     savedStoriesRepository: savedStoriesRepository,
     favoritesRepository: favoritesRepository,
     historyRepository: historyRepository,
+    settingsRepository: settingsRepository,
+    biometricAuthenticator: biometricAuthenticator,
   );
 
   testWidgets('shows a filter action and all feed tabs', (tester) async {
@@ -52,6 +59,115 @@ void main() {
     expect(find.byKey(const Key('search-destination')), findsOneWidget);
     expect(find.byKey(const Key('history-destination')), findsOneWidget);
     expect(find.byKey(const Key('favorites-destination')), findsOneWidget);
+    expect(find.byKey(const Key('settings-destination')), findsOneWidget);
+  });
+
+  testWidgets('settings controls reading history and clears progress', (
+    tester,
+  ) async {
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('settings-destination')));
+    await tester.pumpAndSettle();
+    expect(find.text('Settings'), findsWidgets);
+    expect(
+      tester
+          .widget<SwitchListTile>(find.byKey(const Key('history-setting')))
+          .value,
+      isTrue,
+    );
+
+    await tester.tap(find.byKey(const Key('history-setting')));
+    await tester.pumpAndSettle();
+    expect(settingsRepository.historyEnabled, isFalse);
+
+    await tester.tap(find.byKey(const Key('explore-destination')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('A Quiet Harbour'));
+    await tester.pumpAndSettle();
+    expect(historyRepository.entries, isEmpty);
+
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('settings-destination')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('history-setting')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('explore-destination')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('A Quiet Harbour'));
+    await tester.pumpAndSettle();
+    expect(historyRepository.entries, hasLength(1));
+
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('settings-destination')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('clear-history-setting')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('confirm-clear-history-setting')));
+    await tester.pumpAndSettle();
+    expect(historyRepository.entries, isEmpty);
+  });
+
+  testWidgets('enables fingerprint lock and locks after backgrounding', (
+    tester,
+  ) async {
+    biometricAuthenticator.results.addAll([true, false, true]);
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('settings-destination')));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('app-lock-setting')));
+    await tester.pumpAndSettle();
+    expect(settingsRepository.appLockEnabled, isTrue);
+    expect(biometricAuthenticator.authenticateCalls, 1);
+
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('app-lock-screen')), findsOneWidget);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('app-lock-screen')), findsOneWidget);
+    expect(find.text('Fingerprint not recognized'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('unlock-app')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('app-lock-screen')), findsNothing);
+  });
+
+  testWidgets('does not enable lock without enrolled biometrics', (
+    tester,
+  ) async {
+    biometricAuthenticator.available = false;
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('settings-destination')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('app-lock-setting')));
+    await tester.pumpAndSettle();
+
+    expect(settingsRepository.appLockEnabled, isFalse);
+    expect(find.textContaining('Set up a fingerprint'), findsOneWidget);
+  });
+
+  testWidgets('starts locked when fingerprint lock was previously enabled', (
+    tester,
+  ) async {
+    settingsRepository.appLockEnabled = true;
+    biometricAuthenticator.results.addAll([false, true]);
+
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('app-lock-screen')), findsOneWidget);
+    expect(find.text('Fingerprint not recognized'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('unlock-app')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('app-lock-screen')), findsNothing);
+    expect(find.text('Listor'), findsOneWidget);
   });
 
   testWidgets('searches stories and filters by category', (tester) async {
@@ -799,6 +915,42 @@ class _FakeReadingHistoryRepository implements ReadingHistoryRepository {
     entries.add(entry);
     entries.sort((a, b) => b.lastReadAt.compareTo(a.lastReadAt));
   }
+}
+
+class _FakeAppSettingsRepository implements AppSettingsRepository {
+  bool historyEnabled = true;
+  bool appLockEnabled = false;
+
+  @override
+  Future<bool> readAppLockEnabled() async => appLockEnabled;
+
+  @override
+  Future<bool> readHistoryEnabled() async => historyEnabled;
+
+  @override
+  Future<void> writeAppLockEnabled(bool enabled) async {
+    appLockEnabled = enabled;
+  }
+
+  @override
+  Future<void> writeHistoryEnabled(bool enabled) async {
+    historyEnabled = enabled;
+  }
+}
+
+class _FakeBiometricAuthenticator implements BiometricAuthenticator {
+  bool available = true;
+  int authenticateCalls = 0;
+  final results = <bool>[];
+
+  @override
+  Future<bool> authenticate({required String reason}) async {
+    authenticateCalls++;
+    return results.isEmpty ? true : results.removeAt(0);
+  }
+
+  @override
+  Future<bool> hasEnrolledBiometrics() async => available;
 }
 
 class _FakeSavedStoriesRepository implements SavedStoriesRepository {

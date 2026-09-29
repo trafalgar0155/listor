@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'app_lock.dart';
+import 'app_settings.dart';
 import 'favorites.dart';
 import 'listor_home.dart';
 import 'literotica_api.dart';
@@ -10,19 +12,48 @@ void main() {
   runApp(const ListorApp());
 }
 
-class ListorApp extends StatelessWidget {
+class ListorApp extends StatefulWidget {
   const ListorApp({
     super.key,
     this.repository,
     this.savedStoriesRepository,
     this.favoritesRepository,
     this.historyRepository,
+    this.settingsRepository,
+    this.biometricAuthenticator,
   });
 
   final StoryRepository? repository;
   final SavedStoriesRepository? savedStoriesRepository;
   final FavoritesRepository? favoritesRepository;
   final ReadingHistoryRepository? historyRepository;
+  final AppSettingsRepository? settingsRepository;
+  final BiometricAuthenticator? biometricAuthenticator;
+
+  @override
+  State<ListorApp> createState() => _ListorAppState();
+}
+
+class _ListorAppState extends State<ListorApp> {
+  late final AppSettingsController _settings;
+  late final BiometricAuthenticator _authenticator;
+
+  @override
+  void initState() {
+    super.initState();
+    _settings = AppSettingsController(
+      widget.settingsRepository ?? SharedPreferencesAppSettingsRepository(),
+    );
+    _authenticator =
+        widget.biometricAuthenticator ?? LocalBiometricAuthenticator();
+    _settings.load();
+  }
+
+  @override
+  void dispose() {
+    _settings.dispose();
+    super.dispose();
+  }
 
   static const _blue = Color(0xFF2693FF);
   static const _background = Color(0xFF05070A);
@@ -70,11 +101,35 @@ class ListorApp extends StatelessWidget {
           displayColor: Colors.white,
         ),
       ),
-      home: ListorHomePage(
-        repository: repository,
-        savedStoriesRepository: savedStoriesRepository,
-        favoritesRepository: favoritesRepository,
-        historyRepository: historyRepository,
+      home: ListenableBuilder(
+        listenable: _settings,
+        builder: (context, _) {
+          if (!_settings.isLoaded) {
+            return Scaffold(
+              body: Center(
+                child: _settings.loadError == null
+                    ? const CircularProgressIndicator()
+                    : FilledButton.tonalIcon(
+                        onPressed: _settings.load,
+                        icon: const Icon(Icons.refresh_rounded),
+                        label: const Text('Retry loading settings'),
+                      ),
+              ),
+            );
+          }
+          return AppLockGate(
+            settings: _settings,
+            authenticator: _authenticator,
+            child: ListorHomePage(
+              repository: widget.repository,
+              savedStoriesRepository: widget.savedStoriesRepository,
+              favoritesRepository: widget.favoritesRepository,
+              historyRepository: widget.historyRepository,
+              settings: _settings,
+              biometricAuthenticator: _authenticator,
+            ),
+          );
+        },
       ),
     );
   }

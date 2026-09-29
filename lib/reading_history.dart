@@ -98,7 +98,8 @@ class SqliteReadingHistoryRepository implements ReadingHistoryRepository {
 }
 
 class ReadingHistoryViewModel extends ChangeNotifier {
-  ReadingHistoryViewModel(this._repository);
+  ReadingHistoryViewModel(this._repository, {bool enabled = true})
+    : _isEnabled = enabled;
 
   final ReadingHistoryRepository _repository;
   final List<ReadingHistoryEntry> _entries = [];
@@ -107,10 +108,18 @@ class ReadingHistoryViewModel extends ChangeNotifier {
   Object? _loadError;
   Future<void>? _loadOperation;
   Future<void> _writeQueue = Future.value();
+  bool _isEnabled;
 
   List<ReadingHistoryEntry> get entries => List.unmodifiable(_entries);
   bool get isLoading => _isLoading;
   Object? get loadError => _loadError;
+  bool get isEnabled => _isEnabled;
+
+  void setEnabled(bool enabled) {
+    if (_isEnabled == enabled) return;
+    _isEnabled = enabled;
+    notifyListeners();
+  }
 
   ReadingHistoryEntry? entryFor(int storyId) {
     for (final entry in _entries) {
@@ -145,6 +154,7 @@ class ReadingHistoryViewModel extends ChangeNotifier {
   }
 
   Future<int> resumePage(int storyId, int pageCount) async {
+    if (!_isEnabled) return 0;
     await load();
     final saved = entryFor(storyId)?.pageIndex ?? 0;
     if (pageCount <= 0) return 0;
@@ -157,6 +167,7 @@ class ReadingHistoryViewModel extends ChangeNotifier {
     required int pageCount,
     DateTime? readAt,
   }) async {
+    if (!_isEnabled) return;
     await load();
     final safeCount = pageCount < 1 ? 1 : pageCount;
     final safePage = pageIndex.clamp(0, safeCount - 1).toInt();
