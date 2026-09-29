@@ -36,6 +36,14 @@ void main() {
     expect(find.text('New'), findsOneWidget);
     expect(find.text('Popular'), findsOneWidget);
     expect(find.text('Random'), findsOneWidget);
+    final storyDate = find.byKey(const Key('story-date-35000'));
+    expect(storyDate, findsOneWidget);
+    final dateText = tester.widget<Text>(storyDate);
+    final localizations = MaterialLocalizations.of(tester.element(storyDate));
+    expect(
+      dateText.data,
+      localizations.formatMediumDate(DateTime(2026, 9, 25)),
+    );
     expect(find.byKey(const Key('explore-destination')), findsOneWidget);
     expect(find.byKey(const Key('search-destination')), findsOneWidget);
     expect(find.byKey(const Key('favorites-destination')), findsOneWidget);
@@ -210,7 +218,30 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const Key('story-reader')), findsOneWidget);
-    expect(find.text('Story'), findsOneWidget);
+    expect(
+      tester.widget<Text>(find.byKey(const Key('story-app-bar-title'))).data,
+      'A Quiet Harbour',
+    );
+    final readerDate = find.byKey(const Key('story-reader-date'));
+    expect(readerDate, findsOneWidget);
+    final localizations = MaterialLocalizations.of(tester.element(readerDate));
+    final readerDateText = find.descendant(
+      of: readerDate,
+      matching: find.byType(Text),
+    );
+    expect(
+      tester.widget<Text>(readerDateText).textSpan?.toPlainText().trim(),
+      contains(localizations.formatMediumDate(DateTime(2026, 9, 25))),
+    );
+    expect(find.byKey(const Key('story-series')), findsNothing);
+    final readerCategory = find.descendant(
+      of: find.byKey(const Key('story-reader-category')),
+      matching: find.byType(Text),
+    );
+    expect(
+      tester.widget<Text>(readerCategory).textSpan?.toPlainText(),
+      contains('Non Erotic'),
+    );
     final html = tester.widget<Html>(find.byType(Html));
     expect(html.data, contains('<strong>Opening line</strong>'));
     expect(html.data, contains('<em>emphasis</em>'));
@@ -247,6 +278,12 @@ void main() {
     await tester.tap(find.byKey(const Key('author-story-901')));
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('story-reader')), findsOneWidget);
+    expect(
+      tester.widget<Text>(find.byKey(const Key('story-app-bar-title'))).data,
+      'Harbour Lights Ch. 01',
+    );
+    expect(find.byKey(const Key('story-series')), findsOneWidget);
+    expect(find.textContaining('Harbour Lights · Part 1'), findsOneWidget);
   });
 
   testWidgets('queues every story when downloading a series', (tester) async {

@@ -28,6 +28,10 @@ class StoryCard extends StatelessWidget {
     final colorScheme = theme.colorScheme;
     final textTheme = theme.textTheme;
     final rating = story.rating?.toStringAsFixed(1) ?? '—';
+    final approvedAt = story.approvedAt;
+    final dateLabel = approvedAt == null
+        ? null
+        : MaterialLocalizations.of(context).formatMediumDate(approvedAt);
     return Card(
       clipBehavior: Clip.antiAlias,
       child: InkWell(
@@ -82,16 +86,44 @@ class StoryCard extends StatelessWidget {
                     ),
                 ],
               ),
-              if (story.description.isNotEmpty) ...[
+              if (story.description.isNotEmpty || dateLabel != null) ...[
                 const SizedBox(height: 3),
-                Text(
-                  story.description,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: textTheme.bodyMedium?.copyWith(
-                    color: const Color(0xFFA2ACB7),
-                    height: 1.2,
-                  ),
+                Row(
+                  children: [
+                    if (story.description.isNotEmpty)
+                      Expanded(
+                        child: Text(
+                          story.description,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: textTheme.bodyMedium?.copyWith(
+                            color: const Color(0xFFA2ACB7),
+                            height: 1.2,
+                          ),
+                        ),
+                      ),
+                    if (story.description.isNotEmpty && dateLabel != null)
+                      const SizedBox(width: 10),
+                    if (dateLabel != null)
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            Icons.calendar_today_outlined,
+                            size: 12,
+                            color: Color(0xFF8793A0),
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            key: Key('story-date-${story.id}'),
+                            dateLabel,
+                            style: textTheme.labelMedium?.copyWith(
+                              color: const Color(0xFF8793A0),
+                            ),
+                          ),
+                        ],
+                      ),
+                  ],
                 ),
               ],
               const SizedBox(height: 7),

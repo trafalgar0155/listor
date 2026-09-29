@@ -35,7 +35,14 @@ class _StoryReaderPageState extends State<StoryReaderPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Story')),
+      appBar: AppBar(
+        title: Text(
+          widget.story.title,
+          key: const Key('story-app-bar-title'),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+      ),
       body: FutureBuilder<StoryDocument>(
         future: _document,
         builder: (context, snapshot) {
@@ -71,6 +78,11 @@ class _StoryBody extends StatelessWidget {
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
     final html = formatStoryHtml(document);
+    final seriesTitle = story.seriesTitle?.trim();
+    final approvedAt = story.approvedAt;
+    final dateLabel = approvedAt == null
+        ? null
+        : MaterialLocalizations.of(context).formatMediumDate(approvedAt);
     return SelectionArea(
       child: ListView(
         key: const Key('story-reader'),
@@ -86,6 +98,8 @@ class _StoryBody extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Wrap(
+            spacing: 14,
+            runSpacing: 8,
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               TextButton(
@@ -101,12 +115,24 @@ class _StoryBody extends StatelessWidget {
                 ),
                 child: Text(story.author),
               ),
-              Text(
-                '  •  ${story.category.label}',
-                style: textTheme.labelLarge?.copyWith(
-                  color: Theme.of(context).colorScheme.primary,
-                  fontWeight: FontWeight.w700,
+              if (seriesTitle != null && seriesTitle.isNotEmpty)
+                _ReaderMetadata(
+                  key: const Key('story-series'),
+                  icon: Icons.library_books_outlined,
+                  label: story.seriesPosition == null
+                      ? seriesTitle
+                      : '$seriesTitle · Part ${story.seriesPosition! + 1}',
                 ),
+              if (dateLabel != null)
+                _ReaderMetadata(
+                  key: const Key('story-reader-date'),
+                  icon: Icons.calendar_today_outlined,
+                  label: dateLabel,
+                ),
+              _ReaderMetadata(
+                key: const Key('story-reader-category'),
+                icon: Icons.category_outlined,
+                label: story.category.label,
               ),
             ],
           ),
@@ -136,6 +162,35 @@ class _StoryBody extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _ReaderMetadata extends StatelessWidget {
+  const _ReaderMetadata({super.key, required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = Theme.of(context).colorScheme.onSurfaceVariant;
+    final style = Theme.of(
+      context,
+    ).textTheme.labelLarge?.copyWith(color: color, fontWeight: FontWeight.w600);
+    final iconSize = style?.fontSize ?? 14;
+    return Text.rich(
+      TextSpan(
+        children: [
+          WidgetSpan(
+            alignment: PlaceholderAlignment.middle,
+            child: Icon(icon, size: iconSize, color: color),
+          ),
+          const TextSpan(text: '  '),
+          TextSpan(text: label),
+        ],
+      ),
+      style: style,
     );
   }
 }
