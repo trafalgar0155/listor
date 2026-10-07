@@ -68,13 +68,22 @@ class _AppLockGateState extends State<AppLockGate> with WidgetsBindingObserver {
       case AppLifecycleState.inactive:
       case AppLifecycleState.paused:
       case AppLifecycleState.hidden:
-      case AppLifecycleState.detached:
-        if (!_authenticating && mounted) {
+        // Lock as soon as the app leaves the foreground. Locking already on
+        // `inactive` matters: the OS app-switcher snapshot is taken while the
+        // app is paused (when no more frames render), so the lock screen must
+        // have been composited during the `inactive` phase to cover the
+        // snapshot. Locking must not be skipped while an authentication
+        // prompt is visible: if the user backgrounds the app mid-prompt, the
+        // app must still require a fresh unlock on return.
+        if (mounted) {
           setState(() {
             _locked = true;
             _error = null;
           });
         }
+      case AppLifecycleState.detached:
+        // The engine is going away; nothing to lock.
+        break;
     }
   }
 
@@ -97,51 +106,68 @@ class _AppLockGateState extends State<AppLockGate> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
-    if (!_locked) return widget.child;
-    return Scaffold(
-      key: const Key('app-lock-screen'),
-      body: SafeArea(
-        child: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(32),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  Icons.fingerprint_rounded,
-                  size: 72,
-                  color: Theme.of(context).colorScheme.primary,
-                ),
-                const SizedBox(height: 20),
-                Text(
-                  'Listor is locked',
-                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.w800,
+    // `widget.child` must stay in the tree at all times. Swapping it out for
+    // the lock screen would dispose the home page's state, resetting the
+    // selected destination, tabs, and feeds when the app is unlocked.
+    return Stack(
+      children: [
+        widget.child,
+        if (_locked)
+          Positioned.fill(
+            child: Scaffold(
+              key: const Key('app-lock-screen'),
+              backgroundColor: const Color(0xFF05070A),
+              body: SafeArea(
+                child: Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(32),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.fingerprint_rounded,
+                          size: 72,
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
+                        const SizedBox(height: 20),
+                        Text(
+                          'Listor is locked',
+                          style: Theme.of(
+                            context,
+                          ).textTheme.headlineSmall?.copyWith(
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          _error ?? 'Use your fingerprint to continue.',
+                          textAlign: TextAlign.center,
+                          style: Theme.of(context).textTheme.bodyLarge,
+                        ),
+                        const SizedBox(height: 24),
+                        FilledButton.icon(
+                          key: const Key('unlock-app'),
+                          onPressed: _authenticating ? null : _unlock,
+                          icon: _authenticating
+                              ? const SizedBox.square(
+                                  dimension: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(Icons.fingerprint_rounded),
+                          label: Text(
+                            _authenticating ? 'Checking…' : 'Unlock',
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-                const SizedBox(height: 8),
-                Text(
-                  _error ?? 'Use your fingerprint to continue.',
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.bodyLarge,
-                ),
-                const SizedBox(height: 24),
-                FilledButton.icon(
-                  key: const Key('unlock-app'),
-                  onPressed: _authenticating ? null : _unlock,
-                  icon: _authenticating
-                      ? const SizedBox.square(
-                          dimension: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.fingerprint_rounded),
-                  label: Text(_authenticating ? 'Checking…' : 'Unlock'),
-                ),
-              ],
+              ),
             ),
           ),
-        ),
-      ),
+      ],
     );
   }
 }

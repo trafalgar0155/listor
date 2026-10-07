@@ -138,6 +138,50 @@ void main() {
     expect(find.byKey(const Key('app-lock-screen')), findsNothing);
   });
 
+  testWidgets('keeps the current destination after locking and unlocking', (
+    tester,
+  ) async {
+    settingsRepository.appLockEnabled = true;
+    biometricAuthenticator.results.addAll([true, true]);
+
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('app-lock-screen')), findsNothing);
+
+    await tester.tap(find.byKey(const Key('favorites-destination')));
+    await tester.pumpAndSettle();
+    NavigationBar navigation() => tester.widget<NavigationBar>(
+      find.byType(NavigationBar),
+    );
+    expect(navigation().selectedIndex, 3);
+    final newestFeedRequests = repository.requests
+        .where(
+          (request) => request.feed == FeedType.newest && request.page == 0,
+        )
+        .length;
+
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('app-lock-screen')), findsOneWidget);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('app-lock-screen')), findsNothing);
+
+    // The home page state must survive the lock cycle: same destination, no
+    // feed reload.
+    expect(navigation().selectedIndex, 3);
+    expect(
+      repository.requests.where(
+        (request) => request.feed == FeedType.newest && request.page == 0,
+      ),
+      hasLength(newestFeedRequests),
+    );
+  });
+
   testWidgets('does not enable lock without enrolled biometrics', (
     tester,
   ) async {
